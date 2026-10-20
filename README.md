@@ -1,0 +1,230 @@
+# OpenSimpleMail
+
+> 一个安静、克制、可自托管的多邮箱 Web 客户端。
+
+OpenSimpleMail 让你在一个界面里管理多个 IMAP / SMTP 邮箱：统一收件箱、文件夹、搜索、星标、归档、富文本撰写与附件，全都留在你自己的服务器上。没有广告，没有追踪，没有第三方邮件处理服务。
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-2f6f64.svg)](LICENSE)
+[![React](https://img.shields.io/badge/React-19-149eca.svg)](https://react.dev)
+[![NestJS](https://img.shields.io/badge/NestJS-12-e0234e.svg)](https://nestjs.com)
+[![Biome](https://img.shields.io/badge/code%20style-Biome-60a5fa.svg)](https://biomejs.dev)
+
+![OpenSimpleMail 收件箱](docs/screenshots/inbox.png)
+
+## 功能
+
+- **多邮箱账户**：添加任意数量的 IMAP / SMTP 邮箱，独立连接、独立文件夹与未读计数。
+- **统一收件箱**：按时间合并所有账户的来信，也可以切回单个账户查看完整文件夹树。
+- **完整邮件操作**：分页列表、搜索、已读 / 未读、星标、归档、删除（优先移入服务器废纸篓）。
+- **撰写与回复**：富文本正文、抄送 / 密送、附件、回复 / 转发引用，发送后自动追加到「已发送」。
+- **安全默认值**：凭据 AES-256-GCM 加密、HTML 清洗、沙箱 iframe + 严格 CSP、默认拦截远程图片、CSRF 来源校验、登录限流。
+- **演示模式**：零配置创建演示工作区，内置 20+ 封示例邮件，第一次打开就能体验完整界面。
+- **用起来舒服**：三栏布局、明暗主题、响应式移动端、`j/k/c/r//` 键盘快捷键。
+
+| 登录 | 撰写 |
+| --- | --- |
+| ![登录页](docs/screenshots/login.png) | ![撰写窗口](docs/screenshots/compose.png) |
+
+| 设置 | 移动端 |
+| --- | --- |
+| ![设置页](docs/screenshots/settings.png) | <img src="docs/screenshots/mobile.png" width="260" alt="移动端收件箱"> |
+
+## 技术栈
+
+| 层 | 选择 |
+| --- | --- |
+| 前端 | React 19、Vite 8、TypeScript、TanStack Query、React Router、lucide-react |
+| 后端 | NestJS 12（Express 适配器）、TypeScript、better-sqlite3 |
+| 邮件协议 | [ImapFlow](https://imapflow.com/)（IMAP）、[Nodemailer](https://nodemailer.com/)（SMTP）、mailparser |
+| 数据 | SQLite（WAL 模式），单文件、零外部服务 |
+| 质量 | [Biome](https://biomejs.dev/)（lint + format + import 排序）、Vitest、GitHub Actions |
+
+## 快速开始
+
+### 环境要求
+
+- Node.js **22.12+**（推荐 24，仓库自带 `.nvmrc`）
+- npm 10+
+- 一个支持 IMAP / SMTP 的邮箱；多数服务商需要「应用专用密码」或「客户端授权码」
+
+### 本地开发
+
+```bash
+git clone <your-repo-url> open-simple-mail
+cd open-simple-mail
+npm install
+
+cp .env.example .env
+# 生成一个随机密钥，填入 .env 的 APP_SECRET
+openssl rand -base64 32
+
+npm run dev
+```
+
+- Web：<http://localhost:5173>（Vite 会把 `/api` 代理到 4000）
+- API：<http://localhost:4000/api/health>
+
+首次打开时创建一个本地账号，然后添加邮箱；也可以直接点「用演示邮箱直接体验」。
+
+### 生产构建
+
+```bash
+npm install
+npm run build
+
+APP_SECRET="$(openssl rand -base64 32)" npm start
+# 打开 http://localhost:4000
+```
+
+生产模式下 NestJS 会直接托管 `apps/web/dist`，只需要一个 Node 进程。
+
+### Docker
+
+```bash
+cp .env.example .env
+# 编辑 .env，至少设置 APP_SECRET
+docker compose up -d --build
+```
+
+数据保存在命名卷 `open-simple-mail-data` 中（容器内 `/app/data`）。默认映射到宿主机 `4000` 端口。
+
+## 配置
+
+所有配置都通过环境变量提供，开发时放在项目根目录的 `.env` 中。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `APP_SECRET` | 开发环境内置值 | **生产必填**，至少 24 字符。用于派生凭据加密密钥和会话哈希；更换后已保存的邮箱密码将无法解密 |
+| `PORT` | `4000` | HTTP 端口 |
+| `HOST` | `0.0.0.0` | 监听地址 |
+| `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite 文件路径，相对路径按进程工作目录解析 |
+| `WEB_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` | 允许携带 Cookie 调用 API 的浏览器来源，逗号分隔 |
+| `DEMO_ENABLED` | `true` | 是否显示「演示邮箱」入口 |
+| `MAX_ATTACHMENT_MB` | `25` | 单封邮件附件总大小上限（MB） |
+| `SESSION_DAYS` | `30` | 登录会话有效期（天） |
+| `COOKIE_SECURE` | `false` | 通过 HTTPS 部署时设为 `true` |
+| `TRUST_PROXY` | `0` | 反向代理层数；放在 Nginx/Caddy 后设为 `1`，否则客户端可伪造 `X-Forwarded-For` |
+| `WEB_DIST` | 自动探测 | 自定义前端构建产物目录 |
+
+## 接入邮箱
+
+添加账户时可以选择预设，也可以完全手填：
+
+| 服务商 | IMAP | SMTP | 备注 |
+| --- | --- | --- | --- |
+| Gmail | `imap.gmail.com:993` SSL | `smtp.gmail.com:465` SSL | 需开启两步验证并使用应用专用密码 |
+| Outlook / Microsoft 365 | `outlook.office365.com:993` SSL | `smtp.office365.com:587` STARTTLS | 租户需允许 IMAP/SMTP |
+| QQ 邮箱 | `imap.qq.com:993` SSL | `smtp.qq.com:465` SSL | 在设置中开启 IMAP/SMTP，使用授权码 |
+| 网易 163 / 126 | `imap.163.com:993` SSL | `smtp.163.com:465` SSL | 使用客户端授权密码 |
+| iCloud | `imap.mail.me.com:993` SSL | `smtp.mail.me.com:587` STARTTLS | 使用 App 专用密码 |
+| Yahoo | `imap.mail.yahoo.com:993` SSL | `smtp.mail.yahoo.com:465` SSL | 使用第三方应用密码 |
+| 自建 / 其他 | 按服务商文档填写 | 按服务商文档填写 | 支持任意标准 IMAP/SMTP |
+
+> 本项目使用标准协议，不依赖 Gmail / Microsoft 的私有 API，因此也不需要 OAuth 应用审核；代价是必须使用应用专用密码。
+
+## 安全模型
+
+OpenSimpleMail 面向**单租户自托管**场景：服务器主人就是所有邮箱账户的使用者。
+
+- 本地账号密码使用 `scrypt` 加盐哈希；会话令牌只以 SHA-256 摘要形式落库，Cookie 为 `HttpOnly` + `SameSite=Lax`。
+- 邮箱密码使用 AES-256-GCM 加密，密钥由 `APP_SECRET` 派生；API 永远不会回传密码。
+- 邮件 HTML 在服务端用 sanitize-html 清洗，在客户端放进 `sandbox` iframe 渲染；iframe 内 CSP 为 `default-src 'none'`，默认阻止远程图片，点击「显示图片」后才允许。
+- 所有非 GET 请求校验浏览器 `Origin`；登录、注册、演示入口有速率限制。
+- 附件下载强制 `Content-Disposition: attachment`，并设置 `X-Content-Type-Options: nosniff`。
+
+部署时请务必：
+
+1. 设置强随机 `APP_SECRET`，不要提交 `.env`。
+2. 放在 HTTPS 反向代理之后，并设置 `COOKIE_SECURE=true`。
+3. 定期备份 `data/` 目录；`APP_SECRET` 丢失意味着已保存的邮箱凭据无法恢复。
+4. 不要把实例开放给不受信任的多用户使用：用户可以填写任意 IMAP 主机，这天然具有 SSRF 面。
+
+更多细节见 [SECURITY.md](SECURITY.md)。
+
+## 键盘快捷键
+
+| 按键 | 动作 |
+| --- | --- |
+| `c` | 写邮件 |
+| `/` | 聚焦搜索 |
+| `j` / `k` | 下一封 / 上一封 |
+| `r` | 回复当前邮件 |
+| `Esc` | 关闭阅读区 / 弹窗 |
+| `Ctrl` / `⌘` + `Enter` | 在撰写窗口中发送 |
+
+## 项目结构
+
+```text
+open-simple-mail/
+├── apps/
+│   ├── server/                 # NestJS API
+│   │   ├── src/
+│   │   │   ├── auth/           # 注册、登录、会话、Guard
+│   │   │   ├── accounts/       # 邮箱账户 CRUD 与连接测试
+│   │   │   ├── mail/           # IMAP 连接池、SMTP、清洗、REST 控制器
+│   │   │   ├── demo/           # 内置演示邮箱（SQLite 持久化）
+│   │   │   └── core/           # 配置、SQLite、加密
+│   │   └── test/               # 黑盒 HTTP 端到端测试
+│   └── web/                    # React + Vite 前端
+│       └── src/
+│           ├── components/     # 三栏布局、列表、阅读器、撰写窗
+│           ├── pages/          # 登录、注册、邮箱、设置
+│           └── lib/            # API 客户端、认证、主题、Toast
+├── packages/shared/            # 前后端共享的 API 类型
+├── docs/screenshots/
+├── biome.json
+├── Dockerfile
+└── docker-compose.yml
+```
+
+## 常用脚本
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run dev` | 同时启动 NestJS（watch）与 Vite |
+| `npm run build` | 构建 shared、web、server |
+| `npm start` | 启动生产服务器（需先 build） |
+| `npm run lint` | Biome 检查（含格式与 import 排序） |
+| `npm run lint:fix` | Biome 自动修复 |
+| `npm run typecheck` | 全仓库 TypeScript 检查 |
+| `npm test` | 服务端单元测试 + 黑盒端到端测试 |
+| `npm run check` | lint → typecheck → test → build |
+
+> 服务端使用 `emitDecoratorMetadata`，因此**构造函数注入的 provider 与 DTO 类必须使用值导入**。`biome.json` 已为 `apps/server/**` 关闭 `useImportType`，避免自动修复破坏 NestJS 依赖注入。
+
+## 测试
+
+```bash
+npm test
+```
+
+测试包含：
+
+- 加密与密码哈希（scrypt、AES-GCM、篡改检测）
+- 邮件 HTML 清洗（脚本、事件属性、`javascript:`、iframe、cid 图片）
+- 真实启动 NestJS 进程的 HTTP 端到端测试：注册 / 登录 / 登出 / CSRF / 演示邮箱 / 发送附件 / 移动删除 / 账户 CRUD
+
+## 路线图
+
+- [ ] OAuth 2.0（Gmail、Microsoft Graph）作为应用密码的替代方案
+- [ ] 本地邮件缓存与离线阅读
+- [ ] 附件流式上传 / 下载，避免整封邮件驻留内存
+- [ ] 草稿箱与自动保存
+- [ ] 多语言界面（i18n）
+- [ ] PWA 与桌面通知
+
+## 贡献
+
+欢迎 Issue、设计建议和 Pull Request。提交前请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，并确保 `npm run check` 通过。
+
+## 许可证
+
+[MIT](LICENSE) © OpenSimpleMail contributors
+
+---
+
+### English
+
+OpenSimpleMail is a self-hosted, open-source webmail client for managing multiple IMAP/SMTP mailboxes. It ships a React 19 + Vite frontend, a NestJS 12 API, SQLite storage, encrypted credentials, sanitized HTML rendering in a sandboxed iframe, a built-in demo workspace, Biome for code quality, Vitest end-to-end tests, Docker and GitHub Actions.
+
+See [README.en.md](README.en.md) for the English quick start.

@@ -1,0 +1,291 @@
+import type { MessageSummaryDto } from '@osm/shared'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Inbox,
+  Loader2,
+  Menu,
+  Paperclip,
+  RefreshCw,
+  Search,
+  Star,
+  Trash2,
+  X,
+} from 'lucide-react'
+import type { RefObject } from 'react'
+import { displayAddress, formatListDate } from '@/lib/format'
+import { Avatar } from './Avatar'
+
+export interface MailListItem extends MessageSummaryDto {
+  accountId?: string
+  accountName?: string
+  accountColor?: string
+}
+
+interface MailListProps {
+  title: string
+  subtitle?: string
+  items: MailListItem[]
+  loading: boolean
+  refreshing: boolean
+  selectedKey: string | null
+  total: number
+  page: number
+  pageSize: number
+  unified: boolean
+  search: string
+  searchRef: RefObject<HTMLInputElement | null>
+  onSearchChange: (value: string) => void
+  onSelect: (item: MailListItem) => void
+  onStar: (item: MailListItem) => void
+  onDelete: (item: MailListItem) => void
+  onPage: (page: number) => void
+  onRefresh: () => void
+  onMenu?: () => void
+  emptyTitle?: string
+  emptyBody?: string
+}
+
+function SkeletonRows() {
+  return (
+    <div className="mail-list__skeleton" aria-hidden="true">
+      {Array.from({ length: 7 }).map((_, index) => (
+        <div className="skeleton-row" key={index}>
+          <span className="skeleton skeleton--avatar" />
+          <div className="skeleton-row__body">
+            <span
+              className="skeleton skeleton--line"
+              style={{ width: `${38 + (index % 3) * 12}%` }}
+            />
+            <span
+              className="skeleton skeleton--line"
+              style={{ width: `${58 + (index % 2) * 14}%` }}
+            />
+            <span className="skeleton skeleton--line skeleton--short" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function MailList({
+  title,
+  subtitle,
+  items,
+  loading,
+  refreshing,
+  selectedKey,
+  total,
+  page,
+  pageSize,
+  unified,
+  search,
+  searchRef,
+  onSearchChange,
+  onSelect,
+  onStar,
+  onDelete,
+  onPage,
+  onRefresh,
+  onMenu,
+  emptyTitle,
+  emptyBody,
+}: MailListProps) {
+  const pages = Math.max(1, Math.ceil(total / pageSize))
+
+  return (
+    <section className="mail-list" aria-label="邮件列表">
+      <header className="mail-list__head">
+        {onMenu ? (
+          <button
+            type="button"
+            className="icon-button mail-list__menu"
+            onClick={onMenu}
+            aria-label="打开导航"
+          >
+            <Menu size={18} />
+          </button>
+        ) : null}
+        <div className="mail-list__heading">
+          <h1>{title}</h1>
+          <p>
+            {subtitle ? `${subtitle} · ` : ''}
+            {total > 0 ? `${total} 封` : '暂无邮件'}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onRefresh}
+          title="刷新"
+          aria-label="刷新"
+          disabled={refreshing}
+        >
+          <RefreshCw size={16} className={refreshing ? 'is-spinning' : undefined} />
+        </button>
+      </header>
+
+      <div className="mail-list__search">
+        <Search size={15} className="mail-list__search-icon" />
+        <input
+          ref={searchRef}
+          type="search"
+          value={search}
+          placeholder={unified ? '搜索所有账户的收件箱…' : '搜索当前文件夹…'}
+          onChange={(event) => onSearchChange(event.target.value)}
+          aria-label="搜索邮件"
+        />
+        {search ? (
+          <button
+            type="button"
+            className="mail-list__search-clear"
+            onClick={() => onSearchChange('')}
+            aria-label="清除搜索"
+          >
+            <X size={14} />
+          </button>
+        ) : (
+          <kbd>/</kbd>
+        )}
+      </div>
+
+      <div className="mail-list__body">
+        {loading ? <SkeletonRows /> : null}
+
+        {!loading && items.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-state__icon">
+              <Inbox size={26} />
+            </span>
+            <h3>{emptyTitle ?? (search ? '没有找到匹配的邮件' : '这里还没有邮件')}</h3>
+            <p>{emptyBody ?? (search ? '换一个关键词试试。' : '新邮件会出现在这里。')}</p>
+          </div>
+        ) : null}
+
+        {!loading
+          ? items.map((item) => {
+              const sender = item.from[0]
+              const rowKey = `${item.accountId ?? 'local'}:${item.uid}`
+              const selected = rowKey === selectedKey
+              return (
+                // biome-ignore lint/a11y/useSemanticElements: the row contains action buttons, so a button element would nest interactive controls
+                <div
+                  key={rowKey}
+                  className={`mail-row ${selected ? 'is-selected' : ''} ${
+                    item.unread ? 'is-unread' : ''
+                  }`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onSelect(item)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      onSelect(item)
+                    }
+                  }}
+                >
+                  <span className="mail-row__dot" aria-hidden="true" />
+                  <Avatar
+                    name={sender ? displayAddress(sender) : '?'}
+                    seed={sender?.address ?? item.subject}
+                    size="md"
+                  />
+                  <div className="mail-row__main">
+                    <div className="mail-row__top">
+                      <span className="mail-row__sender">
+                        {sender ? displayAddress(sender) : '未知发件人'}
+                      </span>
+                      <span className="mail-row__date">{formatListDate(item.date)}</span>
+                    </div>
+                    <div className="mail-row__subject">
+                      {item.subject.trim() || '(无主题)'}
+                      {item.starred ? (
+                        <Star size={12} className="mail-row__starred" fill="currentColor" />
+                      ) : null}
+                    </div>
+                    {item.preview ? <p className="mail-row__preview">{item.preview}</p> : null}
+                    <div className="mail-row__meta">
+                      {unified && item.accountName ? (
+                        <span
+                          className="account-chip"
+                          style={{ color: item.accountColor, borderColor: item.accountColor }}
+                        >
+                          {item.accountName}
+                        </span>
+                      ) : null}
+                      {item.hasAttachments ? (
+                        <span className="mail-row__attach">
+                          <Paperclip size={12} /> 附件
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mail-row__actions">
+                    <button
+                      type="button"
+                      className={`row-action ${item.starred ? 'is-on' : ''}`}
+                      title={item.starred ? '取消星标' : '添加星标'}
+                      aria-label={item.starred ? '取消星标' : '添加星标'}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onStar(item)
+                      }}
+                    >
+                      <Star size={15} fill={item.starred ? 'currentColor' : 'none'} />
+                    </button>
+                    <button
+                      type="button"
+                      className="row-action row-action--danger"
+                      title="删除邮件"
+                      aria-label="删除邮件"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onDelete(item)
+                      }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })
+          : null}
+      </div>
+
+      {!unified && total > pageSize ? (
+        <footer className="mail-list__foot">
+          <span>
+            第 {page} / {pages} 页
+          </span>
+          <div className="pager">
+            <button
+              type="button"
+              className="icon-button"
+              disabled={page <= 1}
+              onClick={() => onPage(page - 1)}
+              aria-label="上一页"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              disabled={page >= pages}
+              onClick={() => onPage(page + 1)}
+              aria-label="下一页"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </footer>
+      ) : null}
+
+      {loading && items.length > 0 ? (
+        <div className="mail-list__loading-more">
+          <Loader2 size={15} className="is-spinning" />
+        </div>
+      ) : null}
+    </section>
+  )
+}

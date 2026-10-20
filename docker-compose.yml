@@ -1,0 +1,17 @@
+services:
+  open-simple-mail:
+    build: .
+    container_name: open-simple-mail
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_PATH: /app/data/open-simple-mail.db
+    volumes:
+      - open-simple-mail-data:/app/data
+
+volumes:
+  open-simple-mail-data:

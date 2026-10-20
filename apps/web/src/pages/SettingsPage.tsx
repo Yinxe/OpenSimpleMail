@@ -1,0 +1,306 @@
+import type { AccountDto, TestResultDto } from '@osm/shared'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Check,
+  FlaskConical,
+  LogOut,
+  Monitor,
+  Moon,
+  Pencil,
+  Plus,
+  ShieldCheck,
+  Sun,
+  Trash2,
+} from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { AccountDialog } from '@/components/AccountDialog'
+import { Avatar } from '@/components/Avatar'
+import { Logo } from '@/components/Logo'
+import { Spinner } from '@/components/Spinner'
+import { ThemeToggle } from '@/components/ThemeToggle'
+import { api, errorMessage } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
+import { type ThemeChoice, useTheme } from '@/lib/theme'
+import { useToast } from '@/lib/toast'
+
+const THEME_OPTIONS: {
+  value: ThemeChoice
+  label: string
+  description: string
+  icon: typeof Sun
+}[] = [
+  { value: 'light', label: '浅色', description: '温暖纸张质感', icon: Sun },
+  { value: 'dark', label: '深色', description: '夜间阅读更舒适', icon: Moon },
+  { value: 'system', label: '跟随系统', description: '随系统外观自动切换', icon: Monitor },
+]
+
+export function SettingsPage() {
+  const { user, config, logout } = useAuth()
+  const { theme, setTheme } = useTheme()
+  const toast = useToast()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editing, setEditing] = useState<AccountDto | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
+
+  const accountsQuery = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => api.get<AccountDto[]>('/accounts'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (accountId: string) => api.delete(`/accounts/${accountId}`),
+    onSuccess: (_result, accountId) => {
+      const account = accountsQuery.data?.find((item) => item.id === accountId)
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      toast.success('邮箱已移除', account?.email)
+    },
+    onError: (error) => toast.error('移除失败', errorMessage(error)),
+  })
+
+  async function testAccount(account: AccountDto) {
+    setTestingId(account.id)
+    try {
+      const result = await api.post<TestResultDto>(`/accounts/${account.id}/test`)
+      toast.success('连接正常', `IMAP 与 SMTP 均可用，耗时 ${result.durationMs} ms`)
+    } catch (error) {
+      toast.error('连接失败', errorMessage(error))
+    } finally {
+      setTestingId(null)
+    }
+  }
+
+  function removeAccount(account: AccountDto) {
+    const confirmed = window.confirm(
+      `确定移除「${account.name} <${account.email}>」吗？\n\n这只会删除本应用中的账户配置，不会影响邮箱服务器上的任何邮件。`,
+    )
+    if (confirmed) deleteMutation.mutate(account.id)
+  }
+
+  if (!user) return null
+
+  const accounts = accountsQuery.data ?? []
+
+  return (
+    <div className="settings">
+      <header className="settings__topbar">
+        <div className="settings__topbar-left">
+          <button
+            type="button"
+            className="button button--ghost button--sm"
+            onClick={() => navigate('/app')}
+          >
+            <ArrowLeft size={16} /> 返回邮箱
+          </button>
+          <Logo />
+        </div>
+        <ThemeToggle />
+      </header>
+
+      <main className="settings__main">
+        <div className="settings__intro">
+          <p className="eyebrow">WORKSPACE SETTINGS</p>
+          <h1>设置</h1>
+          <p>管理邮箱连接、外观与本地账号。</p>
+        </div>
+
+        <section className="settings-card settings-profile">
+          <Avatar name={user.name} seed={user.email} size="lg" />
+          <div className="settings-profile__body">
+            <h2>{user.name}</h2>
+            <p>{user.email}</p>
+            {user.isDemo ? (
+              <span className="badge badge--warm">演示工作区</span>
+            ) : (
+              <span className="badge">
+                <BadgeCheck size={13} /> 本地账号
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            className="button button--ghost button--sm"
+            onClick={async () => {
+              await logout()
+              navigate('/login', { replace: true })
+            }}
+          >
+            <LogOut size={15} /> 退出登录
+          </button>
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card__head">
+            <div>
+              <h2>邮箱账户</h2>
+              <p>每个账户独立连接，凭据加密存储在本机 SQLite 中。</p>
+            </div>
+            <button
+              type="button"
+              className="button button--primary button--sm"
+              onClick={() => {
+                setEditing(null)
+                setDialogOpen(true)
+              }}
+            >
+              <Plus size={15} /> 添加邮箱
+            </button>
+          </div>
+
+          <div className="account-cards">
+            {accountsQuery.isLoading ? (
+              <div className="settings-loading">
+                <Spinner size={20} /> 正在读取账户…
+              </div>
+            ) : null}
+
+            {accounts.map((account) => (
+              <article className="account-card" key={account.id}>
+                <Avatar name={account.name} seed={account.email} color={account.color} size="md" />
+                <div className="account-card__body">
+                  <div className="account-card__title">
+                    <h3>{account.name}</h3>
+                    {account.kind === 'demo' ? (
+                      <span className="badge badge--warm">演示</span>
+                    ) : null}
+                  </div>
+                  <p className="account-card__email">{account.email}</p>
+                  <p className="account-card__servers">
+                    {account.kind === 'demo'
+                      ? '内置示例数据，不会连接外部服务器'
+                      : `IMAP ${account.imap.host}:${account.imap.port} · SMTP ${account.smtp.host}:${account.smtp.port}`}
+                  </p>
+                </div>
+                <div className="account-card__actions">
+                  <button
+                    type="button"
+                    className="button button--ghost button--sm"
+                    onClick={() => testAccount(account)}
+                    disabled={testingId === account.id || account.kind === 'demo'}
+                  >
+                    {testingId === account.id ? <Spinner /> : <FlaskConical size={14} />}
+                    测试
+                  </button>
+                  {account.kind !== 'demo' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        onClick={() => {
+                          setEditing(account)
+                          setDialogOpen(true)
+                        }}
+                        title="编辑"
+                        aria-label="编辑"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button icon-button--danger"
+                        onClick={() => removeAccount(account)}
+                        title="移除"
+                        aria-label="移除"
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+
+            {!accountsQuery.isLoading && accounts.length === 0 ? (
+              <div className="settings-empty">
+                <p>还没有添加邮箱账户。</p>
+                <button
+                  type="button"
+                  className="button button--soft button--sm"
+                  onClick={() => {
+                    setEditing(null)
+                    setDialogOpen(true)
+                  }}
+                >
+                  <Plus size={15} /> 添加第一个邮箱
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card__head">
+            <div>
+              <h2>外观</h2>
+              <p>选择界面主题，设置会保存在当前浏览器。</p>
+            </div>
+          </div>
+          <div className="theme-options">
+            {THEME_OPTIONS.map((option) => {
+              const Icon = option.icon
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`theme-option ${theme === option.value ? 'is-active' : ''}`}
+                  onClick={() => setTheme(option.value)}
+                >
+                  <Icon size={19} />
+                  <span className="theme-option__label">{option.label}</span>
+                  <span className="theme-option__desc">{option.description}</span>
+                  {theme === option.value ? (
+                    <Check size={15} className="theme-option__check" />
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+        </section>
+
+        <section className="settings-card settings-about">
+          <div className="settings-card__head">
+            <div>
+              <h2>关于 OpenSimpleMail</h2>
+              <p>一个自托管的开源多邮箱 Web 客户端。</p>
+            </div>
+            <span className="badge">v{config?.version ?? '0.1.0'}</span>
+          </div>
+          <ul className="about-list">
+            <li>
+              <ShieldCheck size={15} />
+              邮箱密码使用 AES-256-GCM 加密，密钥由 <code>APP_SECRET</code> 派生；会话 Cookie 为
+              HttpOnly + SameSite=Lax。
+            </li>
+            <li>
+              <BadgeCheck size={15} />
+              邮件正文在服务端清洗，并在沙箱 iframe 中以严格 CSP 渲染，默认拦截远程图片。
+            </li>
+            <li>
+              <Monitor size={15} />
+              React + Vite 前端，NestJS + SQLite 后端，IMAP / SMTP 使用 ImapFlow 与 Nodemailer。
+            </li>
+          </ul>
+          <p className="settings-about__license">MIT License · 欢迎自托管与二次开发</p>
+        </section>
+      </main>
+
+      <AccountDialog
+        open={dialogOpen}
+        account={editing}
+        onClose={() => setDialogOpen(false)}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ['accounts'] })
+          queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+        }}
+      />
+    </div>
+  )
+}

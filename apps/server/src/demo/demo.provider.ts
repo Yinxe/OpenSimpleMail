@@ -1,0 +1,247 @@
+import { randomUUID } from 'node:crypto'
+import type {
+  MailboxDto,
+  MessageDetailDto,
+  MessagePageDto,
+  MessageSummaryDto,
+  SendResultDto,
+  TestResultDto,
+} from '@osm/shared'
+import type { AccountRow } from '../accounts/account.types'
+import type {
+  AttachmentPayload,
+  DeleteResult,
+  FlagUpdate,
+  ListMessagesOptions,
+  MailProvider,
+  OutgoingMessage,
+} from '../mail/mail.types'
+import { sanitizeEmailHtml } from '../mail/message-sanitizer'
+import { DEMO_FOLDERS, type DemoMessage } from './demo.fixtures'
+import type { DemoService } from './demo.service'
+
+const STARRED = 'Starred'
+
+function toSummary(message: DemoMessage): MessageSummaryDto {
+  return {
+    uid: message.uid,
+    subject: message.subject,
+    from: message.from,
+    to: message.to,
+    date: message.date,
+    flags: message.flags,
+    unread: !message.flags.includes('\\Seen'),
+    starred: message.flags.includes('\\Flagged'),
+    hasAttachments: message.attachments.some((item) => !item.inline),
+    preview: message.text.replace(/\s+/g, ' ').trim().slice(0, 180),
+  }
+}
+
+/**
+ * In-memory (persisted as JSON) mailbox used by the demo workspace. It mirrors the
+ * behaviour of the IMAP provider closely enough for the UI to be explored offline.
+ */
+export class DemoProvider implements MailProvider {
+  constructor(
+    private readonly demo: DemoService,
+    private readonly account: AccountRow,
+  ) {}
+
+  private get store() {
+    return this.demo.getStore(this.account.user_id)
+  }
+
+  private save(): void {
+    this.demo.persist(this.account.user_id)
+  }
+
+  async listMailboxes(): Promise<MailboxDto[]> {
+    const messages = this.store.messages
+    return DEMO_FOLDERS.map((folder) => {
+      const items =
+        folder.path === STARRED
+          ? messages.filter((message) => message.flags.includes('\\Flagged'))
+          : messages.filter((message) => message.mailbox === folder.path)
+      return {
+        path: folder.path,
+        name: folder.name,
+        delimiter: '/',
+        specialUse: folder.specialUse,
+        total: items.length,
+        unread: items.filter((message) => !message.flags.includes('\\Seen')).length,
+      }
+    })
+  }
+
+  async listMessages(options: ListMessagesOptions): Promise<MessagePageDto> {
+    const query = options.query?.trim().toLowerCase()
+    const items = this.store.messages
+      .filter((message) =>
+        options.mailbox === STARRED
+          ? message.flags.includes('\\Flagged')
+          : message.mailbox === options.mailbox,
+      )
+      .filter((message) => {
+        if (!query) return true
+        const haystack = [
+          message.subject,
+          message.text,
+          ...message.from.map((item) => `${item.name ?? ''} ${item.address}`),
+          ...message.to.map((item) => `${item.name ?? ''} ${item.address}`),
+        ]
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(query)
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+    const total = items.length
+    const start = (options.page - 1) * options.pageSize
+    return {
+      mailbox: options.mailbox,
+      messages: items.slice(start, start + options.pageSize).map(toSummary),
+      total,
+      page: options.page,
+      pageSize: options.pageSize,
+    }
+  }
+
+  async getMessage(_mailbox: string, uid: number): Promise<MessageDetailDto> {
+    const message = this.find(uid)
+    const inlineImages = new Map<string, string>()
+    for (const attachment of message.attachments) {
+      if (!attachment.cid || !attachment.contentType.startsWith('image/')) continue
+      const content = Buffer.from(attachment.content, 'base64')
+      if (content.byteLength > 1024 * 1024) continue
+      inlineImages.set(
+        attachment.cid.replace(/^<|>$/g, ''),
+        `data:${attachment.contentType};base64,${attachment.content}`,
+      )
+    }
+    return {
+      ...toSummary(message),
+      mailbox: message.mailbox,
+      cc: message.cc,
+      bcc: message.bcc,
+      replyTo: message.replyTo,
+      text: message.text,
+      html: message.html ? sanitizeEmailHtml(message.html, inlineImages) : null,
+      attachments: message.attachments.map((item, index) => ({
+        index,
+        filename: item.filename,
+        contentType: item.contentType,
+        size: Buffer.from(item.content, 'base64').byteLength,
+        inline: item.inline === true,
+      })),
+      messageId: message.messageId,
+      inReplyTo: message.inReplyTo,
+      references: message.references,
+    }
+  }
+
+  async getAttachment(_mailbox: string, uid: number, index: number): Promise<AttachmentPayload> {
+    const message = this.find(uid)
+    const attachment = message.attachments[index]
+    if (!attachment) throw new Error('附件不存在')
+    return {
+      filename: attachment.filename,
+      contentType: attachment.contentType,
+      content: Buffer.from(attachment.content, 'base64'),
+    }
+  }
+
+  async setFlags(_mailbox: string, uid: number, flags: FlagUpdate): Promise<void> {
+    const message = this.find(uid)
+    const next = new Set(message.flags)
+    if (flags.seen === true) next.add('\\Seen')
+    if (flags.seen === false) next.delete('\\Seen')
+    if (flags.flagged === true) next.add('\\Flagged')
+    if (flags.flagged === false) next.delete('\\Flagged')
+    message.flags = [...next]
+    this.save()
+  }
+
+  async move(_mailbox: string, uid: number, destination: string): Promise<void> {
+    const message = this.find(uid)
+    message.mailbox = destination
+    message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
+    this.save()
+  }
+
+  async delete(_mailbox: string, uid: number): Promise<DeleteResult> {
+    const message = this.find(uid)
+    if (message.mailbox === 'Trash') {
+      const store = this.store
+      store.messages = store.messages.filter((item) => item.uid !== uid)
+      this.save()
+      return {}
+    }
+    message.mailbox = 'Trash'
+    message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
+    this.save()
+    return { movedTo: 'Trash' }
+  }
+
+  async send(message: OutgoingMessage): Promise<SendResultDto> {
+    const store = this.store
+    const uid = store.nextUid++
+    const now = new Date().toISOString()
+    const messageId = `<${randomUUID()}@opensimplemail.local>`
+    const sent: DemoMessage = {
+      uid,
+      mailbox: 'Sent',
+      subject: message.subject,
+      from: [{ name: this.account.name, address: this.account.email }],
+      to: parseAddresses(message.to),
+      cc: parseAddresses(message.cc),
+      bcc: parseAddresses(message.bcc),
+      replyTo: [],
+      date: now,
+      flags: ['\\Seen'],
+      text: message.text ?? '',
+      html: message.html ?? null,
+      attachments: message.attachments.map((item) => ({
+        filename: item.filename,
+        contentType: item.contentType,
+        content: item.content.toString('base64'),
+      })),
+      messageId,
+      inReplyTo: message.inReplyTo ?? null,
+      references: message.references ?? [],
+    }
+    store.messages.push(sent)
+    this.save()
+    return {
+      messageId,
+      accepted: [message.to, message.cc, message.bcc]
+        .filter(Boolean)
+        .flatMap((value) => parseAddresses(value).map((item) => item.address)),
+    }
+  }
+
+  async test(): Promise<TestResultDto> {
+    return { imap: 'ok', smtp: 'ok', durationMs: 0 }
+  }
+
+  private find(uid: number): DemoMessage {
+    const message = this.store.messages.find((item) => item.uid === uid)
+    if (!message) throw new Error('邮件不存在或已被删除')
+    return message
+  }
+}
+
+function parseAddresses(value: string | undefined): { name: string | null; address: string }[] {
+  if (!value) return []
+  return value
+    .split(/[,;]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const match = part.match(/^(.*?)\s*<([^>]+)>$/)
+      if (match) {
+        const name = match[1].replace(/^["']|["']$/g, '').trim()
+        return { name: name || null, address: match[2].trim() }
+      }
+      return { name: null, address: part }
+    })
+}

@@ -1,0 +1,44 @@
+{
+  "name": "open-simple-mail",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A self-hosted, open-source webmail client for managing multiple mailboxes.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "build": "npm run build -w @osm/shared && npm run build -w @osm/web && npm run build -w @osm/server",
+    "start": "node apps/server/dist/main.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "npm run build -w @osm/shared && npm run typecheck --workspaces --if-present",
+    "test": "npm test -w @osm/server",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "dev": "npm run build -w @osm/shared && concurrently -n server,web -c cyan,magenta \"npm run dev -w @osm/server\" \"npm run dev -w @osm/web\"",
+    "postinstall": "node scripts/postinstall.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "concurrently": "^10.0.6",
+    "typescript": "^5.9.3"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "keywords": [
+    "email",
+    "webmail",
+    "imap",
+    "smtp",
+    "react",
+    "nestjs",
+    "self-hosted",
+    "open-source"
+  ],
+  "author": "OpenSimpleMail contributors"
+}
