@@ -18,6 +18,8 @@ import {
   saveDraft,
 } from '@/lib/drafts'
 import { addressLine, displayAddress, formatBytes, formatFullDate, previewText } from '@/lib/format'
+import { useI18n } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/locales'
 import { useToast } from '@/lib/toast'
 import { Modal } from './Modal'
 import { RecipientInput } from './RecipientInput'
@@ -52,26 +54,27 @@ function subjectWithPrefix(subject: string, mode: ComposeMode): string {
   return ''
 }
 
-function quoteBody(source: MessageDetailDto): string {
-  const text = source.text?.trim() || previewText(source.html, null) || '(无正文)'
+function quoteBody(source: MessageDetailDto, t: Translate): string {
+  const text = source.text?.trim() || previewText(source.html, null) || t('composer.noBody')
   const quoted = text
     .split('\n')
     .map((line) => `> ${line}`)
     .join('\n')
-  return `<p><br></p><p style="color:#8a8174;font-size:13px;">在 ${escapeHtml(
-    formatFullDate(source.date),
-  )}，${escapeHtml(addressLine(source.from))} 写道：</p><blockquote style="margin:0;padding-left:14px;border-left:2px solid #e4ded2;color:#6b6357;white-space:pre-wrap;">${escapeHtml(
+  return `<p><br></p><p style="color:#8a8174;font-size:13px;">${t('composer.quoteIntro', {
+    date: formatFullDate(source.date),
+    from: addressLine(source.from),
+  })}</p><blockquote style="margin:0;padding-left:14px;border-left:2px solid #e4ded2;color:#6b6357;white-space:pre-wrap;">${escapeHtml(
     quoted,
   )}</blockquote>`
 }
 
-function forwardBody(source: MessageDetailDto): string {
-  const text = source.text?.trim() || previewText(source.html, null) || '(无正文)'
-  return `<p><br></p><p style="color:#8a8174;font-size:13px;">---------- 转发邮件 ----------</p><p style="color:#8a8174;font-size:13px;">发件人：${escapeHtml(
+function forwardBody(source: MessageDetailDto, t: Translate): string {
+  const text = source.text?.trim() || previewText(source.html, null) || t('composer.noBody')
+  return `<p><br></p><p style="color:#8a8174;font-size:13px;">${t('composer.forwardHeader')}</p><p style="color:#8a8174;font-size:13px;">${t('composer.forwardFrom')}${escapeHtml(
     addressLine(source.from),
-  )}<br>日期：${escapeHtml(formatFullDate(source.date))}<br>主题：${escapeHtml(
+  )}<br>${t('composer.forwardDate')}${escapeHtml(formatFullDate(source.date))}<br>${t('composer.forwardSubject')}${escapeHtml(
     source.subject,
-  )}<br>收件人：${escapeHtml(addressLine(source.to))}</p><blockquote style="margin:0;padding-left:14px;border-left:2px solid #e4ded2;color:#6b6357;white-space:pre-wrap;">${escapeHtml(
+  )}<br>${t('composer.forwardTo')}${escapeHtml(addressLine(source.to))}</p><blockquote style="margin:0;padding-left:14px;border-left:2px solid #e4ded2;color:#6b6357;white-space:pre-wrap;">${escapeHtml(
     text,
   )}</blockquote>`
 }
@@ -138,14 +141,17 @@ function signatureHtml(signature: string | undefined): string {
  * New messages put the signature below the caret; replies and forwards put it
  * above the quote so the usual top-posting order is preserved.
  */
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string
+
 function composeBody(
   mode: ComposeMode,
   source: MessageDetailDto | null,
   signature: string | undefined,
+  t: Translate,
 ): string {
   const sig = signatureHtml(signature)
   if (mode === 'new' || !source) return sig ? `<p><br></p>${sig}` : ''
-  const template = mode === 'forward' ? forwardBody(source) : quoteBody(source)
+  const template = mode === 'forward' ? forwardBody(source, t) : quoteBody(source, t)
   return sig ? `${sig}<p><br></p>${template}` : template
 }
 
@@ -172,6 +178,7 @@ export function Composer({
   onSent,
 }: ComposerProps) {
   const { config, user } = useAuth()
+  const { t } = useI18n()
   const toast = useToast()
   const editorRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -348,7 +355,7 @@ export function Composer({
       setRemoteSaved(Boolean(saved.remote))
       remoteSyncedAt.current = saved.remote ? Date.now() : 0
       if (editorRef.current) editorRef.current.innerHTML = saved.html
-      toast.info('已恢复草稿', '发送成功后会自动清除')
+      toast.info(t('composer.draftRestored'), t('composer.draftRestoredBody'))
     } else if (draftSource) {
       // Editing a message that already sits in the Drafts folder: the server
       // copy is the source of truth, so no signature or template is added.
@@ -376,19 +383,19 @@ export function Composer({
         setCc(mode === 'replyAll' ? replyAllCc(source, accounts, target) : '')
         setBcc('')
         setSubject(subjectWithPrefix(source.subject, mode))
-        if (editorRef.current) editorRef.current.innerHTML = composeBody(mode, source, signature)
+        if (editorRef.current) editorRef.current.innerHTML = composeBody(mode, source, signature, t)
       } else if (mode === 'forward' && source) {
         setTo('')
         setCc('')
         setBcc('')
         setSubject(subjectWithPrefix(source.subject, mode))
-        if (editorRef.current) editorRef.current.innerHTML = composeBody(mode, source, signature)
+        if (editorRef.current) editorRef.current.innerHTML = composeBody(mode, source, signature, t)
       } else {
         setTo('')
         setCc('')
         setBcc('')
         setSubject('')
-        if (editorRef.current) editorRef.current.innerHTML = composeBody('new', null, signature)
+        if (editorRef.current) editorRef.current.innerHTML = composeBody('new', null, signature, t)
       }
     }
 
@@ -446,7 +453,7 @@ export function Composer({
     // Closing keeps the draft, so make sure the server copy is current.
     void syncRemoteDraft(true)
     if (files.length > 0) {
-      const confirmed = window.confirm('附件不会随草稿保存，关闭后需要重新添加。确定关闭吗？')
+      const confirmed = window.confirm(t('composer.attachmentWarning'))
       if (!confirmed) return
     }
     onClose()
@@ -454,7 +461,7 @@ export function Composer({
 
   function discardDraft() {
     if (sending || !draftKey) return
-    if (!window.confirm('丢弃这封草稿？此操作不可撤销。')) return
+    if (!window.confirm(t('composer.discardConfirm'))) return
     void dropRemoteDraft()
     clearDraft(draftKey)
     dirtyRef.current = false
@@ -468,7 +475,7 @@ export function Composer({
   }
 
   function addLink() {
-    const url = window.prompt('输入链接地址')
+    const url = window.prompt(t('composer.linkPrompt'))
     if (url) runCommand('createLink', url)
   }
 
@@ -479,7 +486,7 @@ export function Composer({
     const next = [...files, ...picked]
     const total = next.reduce((sum, file) => sum + file.size, 0)
     if (total > limitMb * 1024 * 1024) {
-      toast.error('附件过大', `附件总大小不能超过 ${limitMb} MB`)
+      toast.error(t('composer.tooLargeTitle'), t('composer.tooLargeBody', { limit: limitMb }))
       event.target.value = ''
       return
     }
@@ -496,7 +503,7 @@ export function Composer({
     setSendDeadline(null)
     setSendRemaining(0)
     setSending(false)
-    toast.info('已取消发送', '邮件还在编辑窗口里')
+    toast.info(t('composer.sendCanceled'), t('composer.sendCanceledBody'))
   }
 
   async function deliver(form: FormData, account: string) {
@@ -507,8 +514,10 @@ export function Composer({
       if (draftKey) clearDraft(draftKey)
       setDraftSavedAt(null)
       toast.success(
-        '邮件已发送',
-        `发件邮箱：${accounts.find((item) => item.id === account)?.email ?? ''}`,
+        t('composer.sent'),
+        t('composer.sentBody', {
+          email: accounts.find((item) => item.id === account)?.email ?? '',
+        }),
       )
       onSent(account)
       onClose()
@@ -524,16 +533,16 @@ export function Composer({
     if (sendInFlight.current) return
     setError('')
     if (!accountId) {
-      setError('请选择一个发件邮箱')
+      setError(t('composer.noAccount'))
       return
     }
     if (![to, cc, bcc].some((value) => value.trim())) {
-      setError('请至少填写一个收件人')
+      setError(t('composer.noRecipient'))
       return
     }
     const bodyText = editorRef.current?.innerText.trim() ?? ''
     if (!subject.trim() && !bodyText && files.length === 0) {
-      setError('写点什么再发送吧')
+      setError(t('composer.emptyBody'))
       return
     }
 
@@ -555,8 +564,8 @@ export function Composer({
     setSending(true)
     setSendDeadline(Date.now() + UNDO_SEND_MS)
     setSendRemaining(Math.ceil(UNDO_SEND_MS / 1000))
-    toast.info('邮件将在 5 秒后发送', '发送前可以撤销', {
-      label: '撤销',
+    toast.info(t('composer.undoToast'), t('composer.undoToastBody'), {
+      label: t('composer.undo'),
       onClick: cancelPendingSend,
     })
 
@@ -570,18 +579,18 @@ export function Composer({
 
   const title =
     mode === 'replyAll'
-      ? '全部回复'
+      ? t('composer.title.replyAll')
       : mode === 'reply'
-        ? '回复邮件'
+        ? t('composer.title.reply')
         : mode === 'forward'
-          ? '转发邮件'
-          : '写邮件'
+          ? t('composer.title.forward')
+          : t('composer.title.new')
 
   return (
     <Modal
       open={open}
       title={title}
-      subtitle={source ? source.subject || '(无主题)' : '支持添加附件与富文本正文'}
+      subtitle={source ? source.subject || t('composer.noSubject') : t('composer.subtitle')}
       size="lg"
       onClose={sending ? () => undefined : requestClose}
       footer={
@@ -594,17 +603,19 @@ export function Composer({
               disabled={sending}
             >
               <Paperclip size={15} />
-              添加附件
+              {t('composer.attach')}
               {files.length > 0 ? <span className="composer__count">{files.length}</span> : null}
             </button>
             <span className="composer__hint">
               {sending && sendRemaining > 0
-                ? `${sendRemaining} 秒后发送 · 可以撤销`
+                ? t('composer.sendCountdown', { seconds: sendRemaining })
                 : sending
-                  ? '正在发送…'
-                  : 'Ctrl / ⌘ + Enter 发送'}
-              {draftSavedAt ? ` · 草稿已保存 ${formatSavedAt(draftSavedAt)}` : ''}
-              {remoteSaved ? ' · 已同步到服务器草稿箱' : ''}
+                  ? t('composer.sending')
+                  : t('composer.shortcut')}
+              {draftSavedAt
+                ? ` · ${t('composer.savedAt', { time: formatSavedAt(draftSavedAt) })}`
+                : ''}
+              {remoteSaved ? ` · ${t('composer.synced')}` : ''}
             </span>
           </div>
           <div className="composer__foot-right">
@@ -614,7 +625,7 @@ export function Composer({
                 className="button button--ghost button--sm"
                 onClick={cancelPendingSend}
               >
-                撤销发送
+                {t('composer.undoSend')}
               </button>
             ) : null}
             {draftSavedAt ? (
@@ -624,7 +635,7 @@ export function Composer({
                 onClick={discardDraft}
                 disabled={sending}
               >
-                丢弃草稿
+                {t('composer.discard')}
               </button>
             ) : null}
             <button
@@ -633,7 +644,7 @@ export function Composer({
               onClick={requestClose}
               disabled={sending}
             >
-              取消
+              {t('composer.cancel')}
             </button>
             <button
               type="button"
@@ -642,7 +653,11 @@ export function Composer({
               disabled={sending}
             >
               {sending ? <Spinner /> : <Send size={16} />}
-              {sending ? (sendRemaining > 0 ? `发送中 ${sendRemaining}s` : '发送中') : '发送'}
+              {sending
+                ? sendRemaining > 0
+                  ? t('composer.sendingCountdown', { seconds: sendRemaining })
+                  : t('composer.sendingShort')
+                : t('composer.send')}
             </button>
           </div>
         </div>
@@ -660,7 +675,7 @@ export function Composer({
       >
         <div className="composer__row">
           <label className="composer__label" htmlFor="compose-from">
-            发件人
+            {t('composer.from')}
           </label>
           <select
             id="compose-from"
@@ -682,7 +697,7 @@ export function Composer({
 
         <div className="composer__row">
           <label className="composer__label" htmlFor="compose-to">
-            收件人
+            {t('composer.to')}
           </label>
           <RecipientInput
             id="compose-to"
@@ -691,7 +706,7 @@ export function Composer({
               dirtyRef.current = true
               setTo(next)
             }}
-            placeholder="name@example.com，多个地址用逗号分隔"
+            placeholder={t('composer.recipientPlaceholder')}
             disabled={sending}
           />
           <button
@@ -699,7 +714,7 @@ export function Composer({
             className="composer__cc-toggle"
             onClick={() => setShowCc((value) => !value)}
           >
-            {showCc ? '收起抄送' : '抄送 / 密送'}
+            {showCc ? t('composer.hideCc') : t('composer.showCc')}
           </button>
         </div>
 
@@ -707,7 +722,7 @@ export function Composer({
           <>
             <div className="composer__row">
               <label className="composer__label" htmlFor="compose-cc">
-                抄送
+                {t('composer.cc')}
               </label>
               <RecipientInput
                 id="compose-cc"
@@ -716,13 +731,13 @@ export function Composer({
                   dirtyRef.current = true
                   setCc(next)
                 }}
-                placeholder="可选"
+                placeholder={t('composer.optional')}
                 disabled={sending}
               />
             </div>
             <div className="composer__row">
               <label className="composer__label" htmlFor="compose-bcc">
-                密送
+                {t('composer.bcc')}
               </label>
               <RecipientInput
                 id="compose-bcc"
@@ -731,7 +746,7 @@ export function Composer({
                   dirtyRef.current = true
                   setBcc(next)
                 }}
-                placeholder="可选"
+                placeholder={t('composer.optional')}
                 disabled={sending}
               />
             </div>
@@ -740,7 +755,7 @@ export function Composer({
 
         <div className="composer__row">
           <label className="composer__label" htmlFor="compose-subject">
-            主题
+            {t('composer.subject')}
           </label>
           <input
             id="compose-subject"
@@ -750,23 +765,33 @@ export function Composer({
               dirtyRef.current = true
               setSubject(event.target.value)
             }}
-            placeholder="这封邮件是关于…"
+            placeholder={t('composer.subjectPlaceholder')}
             disabled={sending}
           />
         </div>
 
         <div className="composer__toolbar">
-          <button type="button" onClick={() => runCommand('bold')} title="加粗" aria-label="加粗">
+          <button
+            type="button"
+            onClick={() => runCommand('bold')}
+            title={t('composer.bold')}
+            aria-label={t('composer.bold')}
+          >
             <Bold size={15} />
           </button>
-          <button type="button" onClick={() => runCommand('italic')} title="斜体" aria-label="斜体">
+          <button
+            type="button"
+            onClick={() => runCommand('italic')}
+            title={t('composer.italic')}
+            aria-label={t('composer.italic')}
+          >
             <Italic size={15} />
           </button>
           <button
             type="button"
             onClick={() => runCommand('underline')}
-            title="下划线"
-            aria-label="下划线"
+            title={t('composer.underline')}
+            aria-label={t('composer.underline')}
           >
             <Underline size={15} />
           </button>
@@ -774,19 +799,24 @@ export function Composer({
           <button
             type="button"
             onClick={() => runCommand('insertUnorderedList')}
-            title="无序列表"
-            aria-label="无序列表"
+            title={t('composer.list')}
+            aria-label={t('composer.list')}
           >
             <List size={15} />
           </button>
-          <button type="button" onClick={addLink} title="插入链接" aria-label="插入链接">
+          <button
+            type="button"
+            onClick={addLink}
+            title={t('composer.link')}
+            aria-label={t('composer.link')}
+          >
             <Link2 size={15} />
           </button>
           <button
             type="button"
             onClick={() => runCommand('removeFormat')}
-            title="清除格式"
-            aria-label="清除格式"
+            title={t('composer.clearFormat')}
+            aria-label={t('composer.clearFormat')}
           >
             <X size={15} />
           </button>
@@ -801,8 +831,8 @@ export function Composer({
           role="textbox"
           tabIndex={0}
           aria-multiline="true"
-          aria-label="邮件正文"
-          data-placeholder="写点什么…"
+          aria-label={t('composer.bodyAria')}
+          data-placeholder={t('composer.bodyPlaceholder')}
           onInput={() => {
             dirtyRef.current = true
             setBodyVersion((value) => value + 1)
@@ -819,7 +849,7 @@ export function Composer({
                 <button
                   type="button"
                   onClick={() => setFiles(files.filter((_, itemIndex) => itemIndex !== index))}
-                  aria-label={`移除 ${file.name}`}
+                  aria-label={t('composer.removeAttachment', { name: file.name })}
                   disabled={sending}
                 >
                   <Trash2 size={13} />
@@ -834,8 +864,10 @@ export function Composer({
         <input ref={fileRef} type="file" multiple hidden onChange={onPickFiles} />
         {source ? (
           <p className="composer__source">
-            关联邮件：{displayAddress(source.from[0] ?? { name: null, address: '' })} ·{' '}
-            {formatFullDate(source.date)}
+            {t('composer.relatedTo', {
+              sender: displayAddress(source.from[0] ?? { name: null, address: '' }),
+            })}{' '}
+            · {formatFullDate(source.date)}
           </p>
         ) : null}
       </div>

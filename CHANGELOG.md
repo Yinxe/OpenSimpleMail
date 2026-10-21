@@ -43,7 +43,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
-- Interface language switch (简体中文 / English) in Settings → Appearance: a small `t()` helper with a flat zh/en dictionary, `{name}` interpolation, browser-language detection and a `localStorage` preference that also updates `<html lang>`. The login page (including two-factor and admin recovery), the Settings headings and the message list (toolbar, search, bulk bar, empty and error states, row hints) are translated; the composer and reader still ship Chinese copy.
+- Interface language switch (简体中文 / English) in Settings → Appearance: a small `t()` helper with a flat zh/en dictionary, `{name}` interpolation, browser-language detection and a `localStorage` preference that also updates `<html lang>`. The login page (including two-factor and admin recovery), the Settings headings and the message list (toolbar, search, bulk bar, empty and error states, row hints) and the composer (fields, toolbar, send/undo/discard, draft status, quote and forward templates) are translated; the reader, sidebar and remaining settings copy still ship Chinese.
 
 - Folder management from the sidebar: create, rename and delete custom folders, and empty the trash; backed by IMAP `CREATE`/`RENAME`/`DELETE`/`CLOSE` and the demo store.
 - Message-list previews for real IMAP accounts: the list fetch now includes the first 4 KB of each message, and a lightweight parser extracts the first text part (quoted-printable, base64, multipart or HTML) into a 180-character summary.
