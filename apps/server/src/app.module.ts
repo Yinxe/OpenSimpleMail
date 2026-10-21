@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module'
 import { CoreModule } from './core/core.module'
 import { DemoModule } from './demo/demo.module'
 import { MailModule } from './mail/mail.module'
+import { PreferencesModule } from './preferences/preferences.module'
 import { SettingsModule } from './settings/settings.module'
 import { SetupGuard } from './setup/setup.guard'
 import { SetupModule } from './setup/setup.module'
@@ -24,6 +25,7 @@ import { SetupModule } from './setup/setup.module'
     AuthModule,
     SetupModule,
     AdminModule,
+    PreferencesModule,
     AccountsModule,
     MailModule,
   ],

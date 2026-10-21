@@ -31,6 +31,30 @@ export interface SystemSettingsDto {
   demoEnabled: boolean
 }
 
+export type DefaultView = 'account' | 'unified'
+export type ListDensity = 'comfortable' | 'compact'
+
+export interface UserPreferencesDto {
+  /** Automatic refresh interval in seconds; 0 disables polling. */
+  refreshSeconds: number
+  pageSize: number
+  autoMarkRead: boolean
+  loadRemoteImages: boolean
+  defaultView: DefaultView
+  density: ListDensity
+}
+
+export type UpdatePreferencesPayload = Partial<UserPreferencesDto>
+
+export const DEFAULT_PREFERENCES: UserPreferencesDto = {
+  refreshSeconds: 60,
+  pageSize: 30,
+  autoMarkRead: true,
+  loadRemoteImages: false,
+  defaultView: 'account',
+  density: 'comfortable',
+}
+
 export interface SetupAdminDto {
   name: string
   email: string

@@ -1,4 +1,11 @@
-import type { AppConfigDto, SetupPayload, UserDto } from '@osm/shared'
+import {
+  type AppConfigDto,
+  DEFAULT_PREFERENCES,
+  type SetupPayload,
+  type UpdatePreferencesPayload,
+  type UserDto,
+  type UserPreferencesDto,
+} from '@osm/shared'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   createContext,
@@ -14,6 +21,7 @@ import { ApiError, api } from './api'
 interface AuthContextValue {
   user: UserDto | null
   config: AppConfigDto | null
+  preferences: UserPreferencesDto
   loading: boolean
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
@@ -22,6 +30,7 @@ interface AuthContextValue {
   recoverAdmin: (email: string, recoveryPassword: string, newPassword: string) => Promise<void>
   setup: (payload: SetupPayload) => Promise<void>
   refreshConfig: () => Promise<void>
+  updatePreferences: (payload: UpdatePreferencesPayload) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -33,8 +42,20 @@ interface AuthResponse {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserDto | null>(null)
   const [config, setConfig] = useState<AppConfigDto | null>(null)
+  const [preferences, setPreferences] = useState<UserPreferencesDto>(DEFAULT_PREFERENCES)
   const [loading, setLoading] = useState(true)
   const queryClient = useQueryClient()
+
+  const loadPreferences = useCallback(async () => {
+    try {
+      const next = await api.get<UserPreferencesDto>('/preferences')
+      setPreferences(next)
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) {
+        console.warn('Could not load user preferences', error)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -46,8 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ])
       if (cancelled) return
       if (configResult.status === 'fulfilled') setConfig(configResult.value)
-      if (meResult.status === 'fulfilled') setUser(meResult.value.user)
-      else if (meResult.reason instanceof ApiError && meResult.reason.status === 401) {
+      if (meResult.status === 'fulfilled') {
+        setUser(meResult.value.user)
+        await loadPreferences()
+      } else if (meResult.reason instanceof ApiError && meResult.reason.status === 401) {
         queryClient.clear()
       } else if (!(meResult.reason instanceof ApiError) || meResult.reason.status !== 401) {
         console.warn('Could not load the current session', meResult.reason)
@@ -59,15 +82,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [queryClient])
+  }, [loadPreferences, queryClient])
 
   const login = useCallback(
     async (email: string, password: string) => {
       const result = await api.post<AuthResponse>('/auth/login', { email, password })
       queryClient.clear()
       setUser(result.user)
+      await loadPreferences()
     },
-    [queryClient],
+    [loadPreferences, queryClient],
   )
 
   const register = useCallback(
@@ -75,21 +99,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await api.post<AuthResponse>('/auth/register', { name, email, password })
       queryClient.clear()
       setUser(result.user)
+      await loadPreferences()
     },
-    [queryClient],
+    [loadPreferences, queryClient],
   )
 
   const demoLogin = useCallback(async () => {
     const result = await api.post<AuthResponse>('/auth/demo')
     queryClient.clear()
     setUser(result.user)
-  }, [queryClient])
+    await loadPreferences()
+  }, [loadPreferences, queryClient])
 
   const logout = useCallback(async () => {
     try {
       await api.post('/auth/logout')
     } finally {
       setUser(null)
+      setPreferences(DEFAULT_PREFERENCES)
       queryClient.clear()
     }
   }, [queryClient])
@@ -103,8 +130,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       queryClient.clear()
       setUser(result.user)
+      await loadPreferences()
     },
-    [queryClient],
+    [loadPreferences, queryClient],
   )
 
   const setup = useCallback(
@@ -123,8 +151,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           : current,
       )
+      await loadPreferences()
     },
-    [queryClient],
+    [loadPreferences, queryClient],
   )
 
   const refreshConfig = useCallback(async () => {
@@ -132,10 +161,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setConfig(next)
   }, [])
 
+  const updatePreferences = useCallback(async (payload: UpdatePreferencesPayload) => {
+    const next = await api.patch<UserPreferencesDto>('/preferences', payload)
+    setPreferences(next)
+  }, [])
+
   const value = useMemo(
     () => ({
       user,
       config,
+      preferences,
       loading,
       login,
       register,
@@ -144,8 +179,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       recoverAdmin,
       setup,
       refreshConfig,
+      updatePreferences,
     }),
-    [user, config, loading, login, register, demoLogin, logout, recoverAdmin, setup, refreshConfig],
+    [
+      user,
+      config,
+      preferences,
+      loading,
+      login,
+      register,
+      demoLogin,
+      logout,
+      recoverAdmin,
+      setup,
+      refreshConfig,
+      updatePreferences,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

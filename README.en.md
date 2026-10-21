@@ -12,6 +12,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 
 - First-run setup wizard: create the administrator and choose the initial site name, registration and demo policy
 - Administrator role with a public-registration switch; disabling it hides the sign-up UI and rejects the API server-side
+- Per-user preferences stored server-side: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
 - Unified inbox across all accounts, plus a per-account folder tree
 - Pagination, search, read/unread, star, archive and delete (moves to the server trash when available)
@@ -81,6 +82,19 @@ Upgrading an older database promotes the oldest existing user to administrator a
 2. Restart the service. A “Forgot admin password?” link appears on the login page.
 3. Enter the administrator email, the recovery password and a new password. The server verifies the recovery password in constant time, rotates the password, **invalidates every existing session for that account**, and signs you in.
 4. Remove `ADMIN_RECOVERY_PASSWORD` and restart again. The recovery endpoint is only for `is_admin` accounts; unknown users, non-admin accounts and wrong passwords share one generic error.
+
+### User preferences
+
+**Settings → Preferences** stores these per user in SQLite, so they follow the account across devices:
+
+- automatic refresh interval (off / 15s / 30s / 1m / 5m / 10m) for the message list, unified inbox and folder counts
+- page size (20 / 30 / 50 / 100)
+- default view (first mailbox or unified inbox)
+- list density (comfortable with previews, or compact)
+- automatically mark a message as read when opened
+- load remote images by default (with a tracking warning)
+
+Disabling automatic refresh still leaves window-focus refresh and the manual refresh button available.
 
 ## Configuration
 

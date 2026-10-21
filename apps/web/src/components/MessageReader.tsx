@@ -22,6 +22,7 @@ interface MessageReaderProps {
   account: AccountDto | null
   message: MessageDetailDto | null
   loading: boolean
+  defaultAllowImages: boolean
   archivePath: string | null
   onClose: () => void
   onReply: (message: MessageDetailDto) => void
@@ -117,6 +118,7 @@ export function MessageReader({
   account,
   message,
   loading,
+  defaultAllowImages,
   archivePath,
   onClose,
   onReply,
@@ -126,12 +128,12 @@ export function MessageReader({
   onToggleRead,
   onArchive,
 }: MessageReaderProps) {
-  const [allowImages, setAllowImages] = useState(false)
+  const [allowImages, setAllowImages] = useState(defaultAllowImages)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset the image preference for each message
   useEffect(() => {
-    setAllowImages(false)
-  }, [message?.uid, message?.mailbox])
+    setAllowImages(defaultAllowImages)
+  }, [defaultAllowImages, message?.uid, message?.mailbox])
 
   if (loading) {
     return (

@@ -52,6 +52,17 @@ CREATE TABLE IF NOT EXISTS demo_state (
   PRIMARY KEY (user_id)
 );
 
+CREATE TABLE IF NOT EXISTS user_preferences (
+  user_id            TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  refresh_seconds    INTEGER NOT NULL DEFAULT 60,
+  page_size          INTEGER NOT NULL DEFAULT 30,
+  auto_mark_read     INTEGER NOT NULL DEFAULT 1,
+  load_remote_images INTEGER NOT NULL DEFAULT 0,
+  default_view       TEXT NOT NULL DEFAULT 'account',
+  density            TEXT NOT NULL DEFAULT 'comfortable',
+  updated_at         TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   id                   INTEGER PRIMARY KEY CHECK (id = 1),
   site_name            TEXT NOT NULL DEFAULT 'OpenSimpleMail',

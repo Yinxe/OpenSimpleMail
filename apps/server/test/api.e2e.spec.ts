@@ -344,6 +344,73 @@ describe('authentication', () => {
   })
 })
 
+describe('user preferences', () => {
+  const client = new ApiClient()
+
+  beforeAll(async () => {
+    const registered = await client.json<AuthResponse>('/auth/register', {
+      ...post({
+        name: 'Preference User',
+        email: `prefs-${Date.now()}@example.com`,
+        password: 'a-strong-password',
+      }),
+    })
+    expect(registered.status).toBe(201)
+  })
+
+  it('returns the defaults for a new user', async () => {
+    const response = await client.json<{
+      refreshSeconds: number
+      pageSize: number
+      autoMarkRead: boolean
+      loadRemoteImages: boolean
+      defaultView: string
+      density: string
+    }>('/preferences')
+    expect(response.status).toBe(200)
+    expect(response.body).toMatchObject({
+      refreshSeconds: 60,
+      pageSize: 30,
+      autoMarkRead: true,
+      loadRemoteImages: false,
+      defaultView: 'account',
+      density: 'comfortable',
+    })
+  })
+
+  it('persists partial updates', async () => {
+    const updated = await client.json<{ refreshSeconds: number; density: string }>('/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        refreshSeconds: 15,
+        pageSize: 50,
+        autoMarkRead: false,
+        loadRemoteImages: true,
+        defaultView: 'unified',
+        density: 'compact',
+      }),
+    })
+    expect(updated.status).toBe(200)
+    expect(updated.body.refreshSeconds).toBe(15)
+    expect(updated.body.density).toBe('compact')
+
+    const persisted = await client.json<{ pageSize: number; defaultView: string }>('/preferences')
+    expect(persisted.body.pageSize).toBe(50)
+    expect(persisted.body.defaultView).toBe('unified')
+  })
+
+  it('rejects out-of-range values and unauthenticated access', async () => {
+    const invalid = await client.json('/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify({ refreshSeconds: 2, pageSize: 5, defaultView: 'nope' }),
+    })
+    expect(invalid.status).toBe(400)
+
+    const anonymous = await new ApiClient().json('/preferences')
+    expect(anonymous.status).toBe(401)
+  })
+})
+
 describe('demo mailbox', () => {
   const client = new ApiClient()
   let account: AccountDto

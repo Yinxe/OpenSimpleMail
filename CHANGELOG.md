@@ -12,6 +12,8 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Per-user preferences persisted in SQLite: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy, editable under Settings.
+- Auto-refresh status hint in the mail list; compact density and configurable unified-inbox default.
 - First-run setup wizard: creates the initial administrator and stores site name, public-registration and demo-mode policy.
 - Administrator role (`users.is_admin`), admin-only system settings API and UI.
 - Public registration switch enforced server-side; the login/register pages reflect the closed state.

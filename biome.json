@@ -13,7 +13,8 @@
       "!**/data",
       "!**/.tmp",
       "!**/coverage",
-      "!**/package-lock.json"
+      "!**/package-lock.json",
+      "!**/docs/design"
     ]
   },
   "formatter": {

@@ -41,6 +41,7 @@ interface MailListProps {
   onDelete: (item: MailListItem) => void
   onPage: (page: number) => void
   onRefresh: () => void
+  refreshHint?: string
   onMenu?: () => void
   emptyTitle?: string
   emptyBody?: string
@@ -88,6 +89,7 @@ export function MailList({
   onDelete,
   onPage,
   onRefresh,
+  refreshHint,
   onMenu,
   emptyTitle,
   emptyBody,
@@ -114,11 +116,12 @@ export function MailList({
             {total > 0 ? `${total} 封` : '暂无邮件'}
           </p>
         </div>
+        {refreshHint ? <span className="mail-list__refresh-hint">{refreshHint}</span> : null}
         <button
           type="button"
           className="icon-button"
           onClick={onRefresh}
-          title="刷新"
+          title={refreshHint ? `刷新（${refreshHint}）` : '刷新'}
           aria-label="刷新"
           disabled={refreshing}
         >

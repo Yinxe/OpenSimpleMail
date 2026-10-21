@@ -1,8 +1,10 @@
-import type {
-  AccountDto,
-  SystemSettingsDto,
-  TestResultDto,
-  UpdateSystemSettingsPayload,
+import {
+  type AccountDto,
+  DEFAULT_PREFERENCES,
+  type SystemSettingsDto,
+  type TestResultDto,
+  type UpdateSystemSettingsPayload,
+  type UserPreferencesDto,
 } from '@osm/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -17,6 +19,7 @@ import {
   Plus,
   Settings2,
   ShieldCheck,
+  SlidersHorizontal,
   Sun,
   Trash2,
 } from 'lucide-react'
@@ -44,7 +47,7 @@ const THEME_OPTIONS: {
 ]
 
 export function SettingsPage() {
-  const { user, config, logout, refreshConfig } = useAuth()
+  const { user, config, preferences, logout, refreshConfig, updatePreferences } = useAuth()
   const { theme, setTheme } = useTheme()
   const toast = useToast()
   const navigate = useNavigate()
@@ -58,6 +61,8 @@ export function SettingsPage() {
     allowRegistration: false,
     demoEnabled: true,
   })
+  const [prefForm, setPrefForm] = useState<UserPreferencesDto>(preferences)
+  const [savingPrefs, setSavingPrefs] = useState(false)
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -69,6 +74,10 @@ export function SettingsPage() {
     queryFn: () => api.get<SystemSettingsDto>('/admin/settings'),
     enabled: Boolean(user?.isAdmin),
   })
+
+  useEffect(() => {
+    setPrefForm(preferences)
+  }, [preferences])
 
   useEffect(() => {
     if (!adminQuery.data) return
@@ -128,6 +137,18 @@ export function SettingsPage() {
       `确定移除「${account.name} <${account.email}>」吗？\n\n这只会删除本应用中的账户配置，不会影响邮箱服务器上的任何邮件。`,
     )
     if (confirmed) deleteMutation.mutate(account.id)
+  }
+
+  async function savePreferences() {
+    setSavingPrefs(true)
+    try {
+      await updatePreferences(prefForm)
+      toast.success('使用偏好已保存')
+    } catch (error) {
+      toast.error('保存使用偏好失败', errorMessage(error))
+    } finally {
+      setSavingPrefs(false)
+    }
   }
 
   if (!user) return null
@@ -369,6 +390,152 @@ export function SettingsPage() {
             </div>
           </section>
         ) : null}
+
+        <section className="settings-card">
+          <div className="settings-card__head">
+            <div>
+              <h2>使用偏好</h2>
+              <p>这些设置保存在服务端，换设备登录也会保持一致。</p>
+            </div>
+            <span className="badge">
+              <SlidersHorizontal size={13} /> 个性化
+            </span>
+          </div>
+
+          <div className="pref-grid">
+            <label className="field">
+              <span className="field__label">自动刷新间隔</span>
+              <select
+                className="input"
+                value={prefForm.refreshSeconds}
+                onChange={(event) =>
+                  setPrefForm((current) => ({
+                    ...current,
+                    refreshSeconds: Number(event.target.value),
+                  }))
+                }
+              >
+                <option value={0}>关闭自动刷新</option>
+                <option value={15}>每 15 秒</option>
+                <option value={30}>每 30 秒</option>
+                <option value={60}>每 1 分钟</option>
+                <option value={300}>每 5 分钟</option>
+                <option value={600}>每 10 分钟</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span className="field__label">每页邮件数</span>
+              <select
+                className="input"
+                value={prefForm.pageSize}
+                onChange={(event) =>
+                  setPrefForm((current) => ({
+                    ...current,
+                    pageSize: Number(event.target.value),
+                  }))
+                }
+              >
+                <option value={20}>20 封</option>
+                <option value={30}>30 封</option>
+                <option value={50}>50 封</option>
+                <option value={100}>100 封</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span className="field__label">默认视图</span>
+              <select
+                className="input"
+                value={prefForm.defaultView}
+                onChange={(event) =>
+                  setPrefForm((current) => ({
+                    ...current,
+                    defaultView: event.target.value as UserPreferencesDto['defaultView'],
+                  }))
+                }
+              >
+                <option value="account">打开第一个邮箱</option>
+                <option value="unified">全部收件箱</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span className="field__label">列表密度</span>
+              <select
+                className="input"
+                value={prefForm.density}
+                onChange={(event) =>
+                  setPrefForm((current) => ({
+                    ...current,
+                    density: event.target.value as UserPreferencesDto['density'],
+                  }))
+                }
+              >
+                <option value="comfortable">舒适（显示预览）</option>
+                <option value="compact">紧凑（更多邮件）</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="pref-switches">
+            <label className="switch-row">
+              <span className="switch-row__text">
+                <strong>打开邮件时自动标为已读</strong>
+                <small>关闭后可以手动控制已读状态，适合需要稍后处理的邮件。</small>
+              </span>
+              <input
+                type="checkbox"
+                className="switch"
+                checked={prefForm.autoMarkRead}
+                onChange={(event) =>
+                  setPrefForm((current) => ({ ...current, autoMarkRead: event.target.checked }))
+                }
+              />
+            </label>
+
+            <label className="switch-row">
+              <span className="switch-row__text">
+                <strong>默认显示远程图片</strong>
+                <small>远程图片可能被发件人用于追踪阅读行为，开启后不再逐封询问。</small>
+              </span>
+              <input
+                type="checkbox"
+                className="switch"
+                checked={prefForm.loadRemoteImages}
+                onChange={(event) =>
+                  setPrefForm((current) => ({
+                    ...current,
+                    loadRemoteImages: event.target.checked,
+                  }))
+                }
+              />
+            </label>
+          </div>
+
+          <div className="admin-settings__foot">
+            <span>自动刷新关闭后，仍可通过窗口聚焦或右上角刷新按钮获取新邮件。</span>
+            <div className="pref-actions">
+              <button
+                type="button"
+                className="button button--ghost button--sm"
+                onClick={() => setPrefForm(DEFAULT_PREFERENCES)}
+                disabled={savingPrefs}
+              >
+                恢复默认
+              </button>
+              <button
+                type="button"
+                className="button button--primary button--sm"
+                onClick={savePreferences}
+                disabled={savingPrefs}
+              >
+                {savingPrefs ? <Spinner /> : <SlidersHorizontal size={14} />}
+                保存偏好
+              </button>
+            </div>
+          </div>
+        </section>
 
         <section className="settings-card">
           <div className="settings-card__head">

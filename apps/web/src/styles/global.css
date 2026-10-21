@@ -3240,3 +3240,89 @@ code {
 .auth-card__recover-back:hover {
   color: var(--ink);
 }
+
+/* ----------------------------- user preferences ----------------------------- */
+.mail-list__refresh-hint {
+  flex: none;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+select.input {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 28px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-muted) 50%),
+    linear-gradient(135deg, var(--ink-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 16px,
+    calc(100% - 10px) 16px;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+}
+
+.pref-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.pref-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.pref-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-shell--compact .mail-row {
+  padding: 9px 12px 9px 10px;
+}
+.app-shell--compact .mail-row .avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 12px;
+}
+.app-shell--compact .mail-row__subject {
+  margin-top: 1px;
+  font-size: 12.5px;
+}
+.app-shell--compact .mail-row__preview {
+  display: none;
+}
+.app-shell--compact .mail-row__meta {
+  margin-top: 3px;
+}
+.app-shell--compact .mail-row__sender {
+  font-size: 12px;
+}
+
+@media (max-width: 1100px) {
+  .mail-list__refresh-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .pref-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-settings__foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pref-actions {
+    justify-content: flex-end;
+  }
+}

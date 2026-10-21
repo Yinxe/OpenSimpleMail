@@ -25,7 +25,6 @@ import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useToast } from '@/lib/toast'
 
-const PAGE_SIZE = 30
 const DEFAULT_MAILBOX = 'INBOX'
 
 interface FlagVars {
@@ -59,7 +58,7 @@ function pickMailbox(mailboxes: MailboxDto[]): string {
 }
 
 export function MailPage() {
-  const { user, config, logout } = useAuth()
+  const { user, config, preferences, logout } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -76,6 +75,7 @@ export function MailPage() {
 
   const [searchInput, setSearchInput] = useState(query)
   const [compose, setCompose] = useState<ComposeState | null>(null)
+  const previousPageSize = useRef(preferences.pageSize)
   const [addOpen, setAddOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -104,11 +104,14 @@ export function MailPage() {
   const accounts = accountsQuery.data ?? []
   const activeAccount = accounts.find((account) => account.id === accountParam) ?? null
 
+  const refreshMs = preferences.refreshSeconds > 0 ? preferences.refreshSeconds * 1000 : false
+
   const mailboxQueries = useQueries({
     queries: accounts.map((account) => ({
       queryKey: ['mailboxes', account.id],
       queryFn: () => api.get<MailboxDto[]>(`/accounts/${account.id}/mailboxes`),
       staleTime: 45_000,
+      refetchInterval: refreshMs,
     })),
   })
 
@@ -130,7 +133,7 @@ export function MailPage() {
     if (accountsQuery.isLoading) return
     if (!params.get('account') && accounts[0]) {
       update({
-        account: accounts[0].id,
+        account: preferences.defaultView === 'unified' ? 'all' : accounts[0].id,
         mailbox: DEFAULT_MAILBOX,
         uid: null,
         openAccount: null,
@@ -147,7 +150,7 @@ export function MailPage() {
         page: null,
       })
     }
-  }, [accounts, accountsQuery.isLoading, accountParam, params, update])
+  }, [accounts, accountsQuery.isLoading, accountParam, params, preferences.defaultView, update])
 
   useEffect(() => {
     if (!activeAccount || activeMailboxes.length === 0) return
@@ -157,31 +160,31 @@ export function MailPage() {
   }, [activeAccount, activeMailboxes, mailboxParam, update])
 
   const messagesQuery = useQuery({
-    queryKey: ['messages', accountParam, mailboxParam, page, query],
+    queryKey: ['messages', accountParam, mailboxParam, page, preferences.pageSize, query],
     queryFn: () =>
       api.get<MessagePageDto>(
-        `/accounts/${accountParam}/messages?mailbox=${encodeURIComponent(mailboxParam)}&page=${page}&pageSize=${PAGE_SIZE}${
+        `/accounts/${accountParam}/messages?mailbox=${encodeURIComponent(mailboxParam)}&page=${page}&pageSize=${preferences.pageSize}${
           query ? `&q=${encodeURIComponent(query)}` : ''
         }`,
       ),
     enabled: !unified && Boolean(activeAccount),
     placeholderData: keepPreviousData,
     staleTime: 15_000,
-    refetchInterval: 60_000,
+    refetchInterval: refreshMs,
   })
 
   const unifiedQueries = useQueries({
     queries: accounts.map((account) => ({
-      queryKey: ['messages', account.id, DEFAULT_MAILBOX, 1, query],
+      queryKey: ['messages', account.id, DEFAULT_MAILBOX, 1, preferences.pageSize, query],
       queryFn: () =>
         api.get<MessagePageDto>(
-          `/accounts/${account.id}/messages?mailbox=${DEFAULT_MAILBOX}&page=1&pageSize=${PAGE_SIZE}${
+          `/accounts/${account.id}/messages?mailbox=${DEFAULT_MAILBOX}&page=1&pageSize=${preferences.pageSize}${
             query ? `&q=${encodeURIComponent(query)}` : ''
           }`,
         ),
       enabled: unified,
       staleTime: 15_000,
-      refetchInterval: unified ? 60_000 : false,
+      refetchInterval: unified ? refreshMs : false,
     })),
   })
 
@@ -354,7 +357,7 @@ export function MailPage() {
       uid: String(item.uid),
       ...(item.accountId ? { openAccount: item.accountId } : {}),
     })
-    if (item.unread) {
+    if (item.unread && preferences.autoMarkRead) {
       flagsMutation.mutate({
         accountId,
         mailbox,
@@ -419,6 +422,12 @@ export function MailPage() {
   useEffect(() => {
     setSearchInput(query)
   }, [query])
+
+  useEffect(() => {
+    if (previousPageSize.current === preferences.pageSize) return
+    previousPageSize.current = preferences.pageSize
+    update({ page: null, uid: null })
+  }, [preferences.pageSize, update])
 
   useEffect(() => {
     if (searchInput === query) return
@@ -503,7 +512,9 @@ export function MailPage() {
 
   return (
     <div
-      className={`app-shell ${reading ? 'is-reading' : ''} ${sidebarOpen ? 'is-sidebar-open' : ''}`}
+      className={`app-shell ${reading ? 'is-reading' : ''} ${
+        sidebarOpen ? 'is-sidebar-open' : ''
+      } ${preferences.density === 'compact' ? 'app-shell--compact' : ''}`}
     >
       <Sidebar
         user={user}
@@ -573,7 +584,7 @@ export function MailPage() {
             selectedKey={selectedKey}
             total={total}
             page={page}
-            pageSize={PAGE_SIZE}
+            pageSize={preferences.pageSize}
             unified={unified}
             search={searchInput}
             searchRef={searchRef}
@@ -591,6 +602,11 @@ export function MailPage() {
             }}
             onPage={(nextPage) => update({ page: String(nextPage), uid: null })}
             onRefresh={refresh}
+            refreshHint={
+              preferences.refreshSeconds > 0
+                ? `每 ${preferences.refreshSeconds} 秒自动刷新`
+                : '自动刷新已关闭'
+            }
             onMenu={() => setSidebarOpen(true)}
             emptyTitle={unified && accounts.length > 0 ? '收件箱是空的' : undefined}
             emptyBody={
@@ -603,6 +619,7 @@ export function MailPage() {
           <MessageReader
             account={readerAccount}
             message={detailQuery.data ?? null}
+            defaultAllowImages={preferences.loadRemoteImages}
             loading={Boolean(uidParam) && detailQuery.isLoading}
             archivePath={archivePath}
             onClose={() => update({ uid: null, openAccount: null })}
