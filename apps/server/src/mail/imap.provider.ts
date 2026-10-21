@@ -520,6 +520,24 @@ export class ImapProvider implements MailProvider {
     if (flags.seen !== undefined) dropMailboxCache(this.creds.accountId)
   }
 
+  async setFlagsMany(mailbox: string, uids: number[], flags: FlagUpdate): Promise<void> {
+    if (uids.length === 0) return
+    await this.pool.withClient(this.creds, async (client) => {
+      const lock = await client.getMailboxLock(mailbox)
+      try {
+        if (flags.seen === true) await client.messageFlagsAdd(uids, ['\\Seen'], { uid: true })
+        if (flags.seen === false) await client.messageFlagsRemove(uids, ['\\Seen'], { uid: true })
+        if (flags.flagged === true) await client.messageFlagsAdd(uids, ['\\Flagged'], { uid: true })
+        if (flags.flagged === false)
+          await client.messageFlagsRemove(uids, ['\\Flagged'], { uid: true })
+      } finally {
+        lock.release()
+      }
+    })
+    if (flags.flagged !== undefined) dropStarredCache(this.creds.accountId)
+    if (flags.seen !== undefined) dropMailboxCache(this.creds.accountId)
+  }
+
   async markMailboxRead(mailbox: string): Promise<void> {
     await this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
@@ -550,6 +568,21 @@ export class ImapProvider implements MailProvider {
     dropMailboxCache(this.creds.accountId)
   }
 
+  async moveMany(mailbox: string, uids: number[], destination: string): Promise<void> {
+    if (uids.length === 0) return
+    await this.pool.withClient(this.creds, async (client) => {
+      const lock = await client.getMailboxLock(mailbox)
+      try {
+        await client.messageMove(uids, destination, { uid: true })
+      } finally {
+        lock.release()
+      }
+    })
+    for (const uid of uids) dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    dropStarredCache(this.creds.accountId)
+    dropMailboxCache(this.creds.accountId)
+  }
+
   async delete(mailbox: string, uid: number): Promise<DeleteResult> {
     const result = await this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
@@ -571,6 +604,33 @@ export class ImapProvider implements MailProvider {
       }
     })
     dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    dropStarredCache(this.creds.accountId)
+    dropMailboxCache(this.creds.accountId)
+    return result
+  }
+
+  async deleteMany(mailbox: string, uids: number[]): Promise<DeleteResult> {
+    if (uids.length === 0) return {}
+    const result = await this.pool.withClient(this.creds, async (client) => {
+      const lock = await client.getMailboxLock(mailbox)
+      try {
+        const list = await client.list()
+        const trash = list.find(
+          (item) =>
+            item.specialUse === '\\Trash' ||
+            /^(trash|deleted items|已删除|废纸篓)$/i.test(item.name),
+        )
+        if (trash && trash.path !== mailbox) {
+          await client.messageMove(uids, trash.path, { uid: true })
+          return { movedTo: trash.path }
+        }
+        await client.messageDelete(uids, { uid: true })
+        return {}
+      } finally {
+        lock.release()
+      }
+    })
+    for (const uid of uids) dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
     return result

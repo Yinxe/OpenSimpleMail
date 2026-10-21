@@ -133,6 +133,17 @@ export class MailService {
     await this.run(() => provider.setFlags(mailbox, uid, flags), '无法更新邮件状态')
   }
 
+  async setFlagsMany(
+    userId: string,
+    accountId: string,
+    mailbox: string,
+    uids: number[],
+    flags: FlagUpdate,
+  ): Promise<void> {
+    const provider = await this.provider(userId, accountId)
+    await this.run(() => provider.setFlagsMany(mailbox, uids, flags), '无法批量更新邮件状态')
+  }
+
   async markMailboxRead(userId: string, accountId: string, mailbox: string): Promise<void> {
     const provider = await this.provider(userId, accountId)
     await this.run(() => provider.markMailboxRead(mailbox), '无法将邮件标为已读')
@@ -149,6 +160,17 @@ export class MailService {
     await this.run(() => provider.move(mailbox, uid, destination), '无法移动邮件')
   }
 
+  async moveMany(
+    userId: string,
+    accountId: string,
+    mailbox: string,
+    uids: number[],
+    destination: string,
+  ): Promise<void> {
+    const provider = await this.provider(userId, accountId)
+    await this.run(() => provider.moveMany(mailbox, uids, destination), '无法批量移动邮件')
+  }
+
   async remove(
     userId: string,
     accountId: string,
@@ -157,6 +179,16 @@ export class MailService {
   ): Promise<{ movedTo?: string }> {
     const provider = await this.provider(userId, accountId)
     return this.run(() => provider.delete(mailbox, uid), '无法删除邮件')
+  }
+
+  async removeMany(
+    userId: string,
+    accountId: string,
+    mailbox: string,
+    uids: number[],
+  ): Promise<{ movedTo?: string }> {
+    const provider = await this.provider(userId, accountId)
+    return this.run(() => provider.deleteMany(mailbox, uids), '无法批量删除邮件')
   }
 
   async send(
@@ -222,7 +254,17 @@ export class MailService {
     } catch (error) {
       if (error instanceof HttpException) throw error
       const detail = error instanceof Error ? error.message : String(error)
-      this.logger.warn(`${fallback}: ${detail}`)
+      const extra = error as Error & {
+        code?: string
+        command?: string
+        responseText?: string
+      }
+      this.logger.warn(
+        `${fallback}: ${detail}` +
+          (extra.code ? ` [code=${extra.code}]` : '') +
+          (extra.command ? ` [command=${extra.command}]` : '') +
+          (extra.responseText ? ` [response=${extra.responseText}]` : ''),
+      )
       throw new BadGatewayException(`${fallback}：${detail}`)
     }
   }

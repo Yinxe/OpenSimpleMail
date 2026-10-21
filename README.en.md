@@ -15,7 +15,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 - Per-user preferences stored server-side: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
 - Unified inbox across all accounts, plus a per-account folder tree
-- Pagination, search, explicit read/unread markers with per-row toggles and one-click "mark all read", star, archive and delete (moves to the server trash when available)
+- Pagination, search, explicit read/unread markers with per-row toggles and one-click "mark all read", batch selection with bulk read/archive/delete, star and delete (moves to the server trash when available)
 - Three reader views: full HTML, simplified text (images and styling removed, links kept) and verification code; the choice is remembered per browser
 - Verification-code detection across the subject and body, preserving letter case, with expiry hints and one-click copy; it runs locally in the browser
 - Starred view: flagged mail is collected across folders under "收藏" in the sidebar, where it can be read, un-starred or deleted and searched

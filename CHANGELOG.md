@@ -20,6 +20,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Batch selection in the message list: per-row checkboxes with Shift range, select-all, and bulk mark read/unread, archive and delete; the server applies each batch with one IMAP command.
 - Undo send: the composer waits five seconds before delivering, shows a countdown on the send button and footer, and offers a cancel action both in the footer and in the toast.
 - Read-state controls in the message list: a clear unread dot / read check marker, a per-row read/unread toggle, and a one-click "mark all read" action for the current folder or unified inbox.
 - Recipient autocomplete in the composer: addresses are learned from sent mail and opened messages, suggestions follow the token after the last comma/semicolon, and can be picked with the mouse or arrow keys + Enter.

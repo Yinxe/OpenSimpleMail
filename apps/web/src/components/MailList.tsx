@@ -27,6 +27,11 @@ export interface MailListItem extends MessageSummaryDto {
   accountColor?: string
 }
 
+/** Stable row key shared by the list, selection state and bulk actions. */
+export function mailRowKey(item: MailListItem, activeAccountId?: string | null): string {
+  return `${item.accountId ?? activeAccountId ?? 'local'}:${item.mailbox ?? 'local'}:${item.uid}`
+}
+
 interface MailListProps {
   title: string
   subtitle?: string
@@ -34,6 +39,16 @@ interface MailListProps {
   loading: boolean
   refreshing: boolean
   selectedKey: string | null
+  activeAccountId?: string | null
+  selectedRows: Set<string>
+  onToggleSelect: (item: MailListItem, shiftKey: boolean) => void
+  onSelectAll: () => void
+  onClearSelection: () => void
+  onBulkRead: (seen: boolean) => void
+  onBulkArchive: () => void
+  onBulkDelete: () => void
+  bulkBusy: boolean
+  canBulkArchive: boolean
   total: number
   page: number
   pageSize: number
@@ -89,6 +104,16 @@ export function MailList({
   loading,
   refreshing,
   selectedKey,
+  activeAccountId,
+  selectedRows,
+  onToggleSelect,
+  onSelectAll,
+  onClearSelection,
+  onBulkRead,
+  onBulkArchive,
+  onBulkDelete,
+  bulkBusy,
+  canBulkArchive,
   total,
   page,
   pageSize,
@@ -114,9 +139,14 @@ export function MailList({
   emptyBody,
 }: MailListProps) {
   const pages = Math.max(1, Math.ceil(total / pageSize))
+  const selectedOnPage = items.filter((item) => selectedRows.has(mailRowKey(item, activeAccountId)))
+  const allSelected = items.length > 0 && selectedOnPage.length === items.length
 
   return (
-    <section className="mail-list" aria-label="邮件列表">
+    <section
+      className={`mail-list ${selectedOnPage.length > 0 ? 'has-selection' : ''}`}
+      aria-label="邮件列表"
+    >
       <header className="mail-list__head">
         {onMenu ? (
           <button
@@ -127,6 +157,16 @@ export function MailList({
           >
             <Menu size={18} />
           </button>
+        ) : null}
+        {items.length > 0 ? (
+          <label className="mail-list__select-all" title="选择本页全部">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={onSelectAll}
+              aria-label="选择本页全部邮件"
+            />
+          </label>
         ) : null}
         <div className="mail-list__heading">
           <h1>{title}</h1>
@@ -188,6 +228,40 @@ export function MailList({
         )}
       </div>
 
+      {selectedOnPage.length > 0 ? (
+        <div className="bulk-bar" role="toolbar" aria-label="批量操作">
+          <span className="bulk-bar__count">已选 {selectedOnPage.length} 封</span>
+          <button type="button" onClick={() => onBulkRead(true)} disabled={bulkBusy}>
+            标为已读
+          </button>
+          <button type="button" onClick={() => onBulkRead(false)} disabled={bulkBusy}>
+            标为未读
+          </button>
+          {canBulkArchive ? (
+            <button type="button" onClick={onBulkArchive} disabled={bulkBusy}>
+              归档
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="bulk-bar__danger"
+            onClick={onBulkDelete}
+            disabled={bulkBusy}
+          >
+            删除
+          </button>
+          <button
+            type="button"
+            className="bulk-bar__clear"
+            onClick={onClearSelection}
+            disabled={bulkBusy}
+          >
+            取消
+          </button>
+          {bulkBusy ? <Loader2 size={14} className="is-spinning" /> : null}
+        </div>
+      ) : null}
+
       <div className="mail-list__body">
         {loading ? <SkeletonRows /> : null}
 
@@ -233,15 +307,16 @@ export function MailList({
               const sender = item.from[0]
               // UIDs are only unique inside a mailbox, and the starred view
               // merges several folders, so the folder is part of the key.
-              const rowKey = `${item.accountId ?? 'local'}:${item.mailbox ?? 'local'}:${item.uid}`
+              const rowKey = mailRowKey(item, activeAccountId)
               const selected = rowKey === selectedKey
+              const checked = selectedRows.has(rowKey)
               return (
                 // biome-ignore lint/a11y/useSemanticElements: the row contains action buttons, so a button element would nest interactive controls
                 <div
                   key={rowKey}
                   className={`mail-row ${selected ? 'is-selected' : ''} ${
-                    item.unread ? 'is-unread' : ''
-                  }`}
+                    checked ? 'is-checked' : ''
+                  } ${item.unread ? 'is-unread' : ''}`}
                   role="button"
                   tabIndex={0}
                   aria-current={selected ? 'true' : undefined}
@@ -253,6 +328,18 @@ export function MailList({
                     }
                   }}
                 >
+                  <span className="mail-row__check">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      readOnly
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onToggleSelect(item, event.shiftKey)
+                      }}
+                      aria-label={checked ? '取消选择这封邮件' : '选择这封邮件'}
+                    />
+                  </span>
                   <span
                     className={`mail-row__status ${item.unread ? 'is-unread' : 'is-read'}`}
                     title={item.unread ? '未读' : '已读'}

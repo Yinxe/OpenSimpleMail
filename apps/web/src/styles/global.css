@@ -1287,6 +1287,59 @@ code {
   white-space: nowrap;
 }
 
+.mail-list__select-all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.mail-list__select-all input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 11.5px;
+}
+.bulk-bar__count {
+  font-weight: 700;
+}
+.bulk-bar button {
+  padding: 3px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 99px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+}
+.bulk-bar button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.bulk-bar button:disabled {
+  opacity: 0.5;
+}
+.bulk-bar__danger {
+  color: var(--danger);
+}
+.bulk-bar__clear {
+  margin-left: auto;
+  background: transparent;
+}
+
 .mail-list__search {
   position: relative;
   display: flex;
@@ -1352,7 +1405,7 @@ code {
 .mail-row {
   position: relative;
   display: grid;
-  grid-template-columns: 16px 36px minmax(0, 1fr) auto;
+  grid-template-columns: 18px 16px 36px minmax(0, 1fr) auto;
   align-items: start;
   gap: 10px;
   padding: 13px 14px 13px 10px;
@@ -1364,6 +1417,9 @@ code {
 .mail-row:hover {
   background: var(--surface-2);
 }
+.mail-row.is-checked {
+  background: var(--surface-2);
+}
 .mail-row.is-selected {
   background: var(--accent-soft);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -1373,6 +1429,30 @@ code {
 }
 .mail-row:focus-visible {
   outline-offset: -2px;
+}
+
+.mail-row__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.mail-row:hover .mail-row__check,
+.mail-row.is-checked .mail-row__check,
+.mail-row.is-selected .mail-row__check,
+.mail-list.has-selection .mail-row__check,
+.mail-row__check:focus-within {
+  opacity: 1;
+}
+.mail-row__check input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .mail-row__status {
@@ -3841,6 +3921,12 @@ select.input {
 }
 .app-shell--compact .mail-row__sender {
   font-size: 12px;
+}
+
+@media (hover: none) {
+  .mail-row__check {
+    opacity: 1;
+  }
 }
 
 @media (max-width: 1100px) {

@@ -487,6 +487,45 @@ describe('demo mailbox', () => {
     expect(page.body.messages.every((item) => !item.unread)).toBe(true)
   })
 
+  it('applies bulk read, move and delete operations', async () => {
+    const page = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=5`,
+    )
+    const uids = page.body.messages.slice(0, 3).map((item) => item.uid)
+    expect(uids).toHaveLength(3)
+
+    const flags = await client.json(
+      `/accounts/${account.id}/messages/bulk/flags`,
+      post({ mailbox: 'INBOX', uids, seen: false }),
+    )
+    expect(flags.status).toBe(204)
+
+    const afterFlags = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=50`,
+    )
+    const changed = afterFlags.body.messages.filter((item) => uids.includes(item.uid))
+    expect(changed).toHaveLength(3)
+    expect(changed.every((item) => item.unread)).toBe(true)
+
+    const moved = await client.json(
+      `/accounts/${account.id}/messages/bulk/move`,
+      post({ mailbox: 'INBOX', uids, destination: 'Archive' }),
+    )
+    expect(moved.status).toBe(204)
+
+    const archive = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=Archive&page=1&pageSize=50`,
+    )
+    expect(archive.body.messages.filter((item) => uids.includes(item.uid))).toHaveLength(3)
+
+    const deleted = await client.json<{ movedTo?: string }>(
+      `/accounts/${account.id}/messages/bulk/delete`,
+      post({ mailbox: 'Archive', uids }),
+    )
+    expect(deleted.status).toBe(200)
+    expect(deleted.body.movedTo).toBe('Trash')
+  })
+
   it('aggregates starred messages in the virtual starred mailbox', async () => {
     const page = await client.json<MessagePageDto>(
       `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=50`,

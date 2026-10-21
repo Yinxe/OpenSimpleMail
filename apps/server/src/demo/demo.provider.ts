@@ -167,6 +167,19 @@ export class DemoProvider implements MailProvider {
     this.save()
   }
 
+  async setFlagsMany(_mailbox: string, uids: number[], flags: FlagUpdate): Promise<void> {
+    const messages = this.findMany(uids)
+    for (const message of messages) {
+      const next = new Set(message.flags)
+      if (flags.seen === true) next.add('\\Seen')
+      if (flags.seen === false) next.delete('\\Seen')
+      if (flags.flagged === true) next.add('\\Flagged')
+      if (flags.flagged === false) next.delete('\\Flagged')
+      message.flags = [...next]
+    }
+    if (messages.length > 0) this.save()
+  }
+
   async markMailboxRead(mailbox: string): Promise<void> {
     const starred = mailbox === STARRED || mailbox === STARRED_MAILBOX
     let changed = false
@@ -186,6 +199,15 @@ export class DemoProvider implements MailProvider {
     this.save()
   }
 
+  async moveMany(_mailbox: string, uids: number[], destination: string): Promise<void> {
+    const messages = this.findMany(uids)
+    for (const message of messages) {
+      message.mailbox = destination
+      message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
+    }
+    if (messages.length > 0) this.save()
+  }
+
   async delete(_mailbox: string, uid: number): Promise<DeleteResult> {
     const message = this.find(uid)
     if (message.mailbox === 'Trash') {
@@ -196,6 +218,22 @@ export class DemoProvider implements MailProvider {
     }
     message.mailbox = 'Trash'
     message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
+    this.save()
+    return { movedTo: 'Trash' }
+  }
+
+  async deleteMany(mailbox: string, uids: number[]): Promise<DeleteResult> {
+    const set = new Set(uids)
+    if (mailbox === 'Trash') {
+      const store = this.store
+      store.messages = store.messages.filter((item) => !set.has(item.uid))
+      this.save()
+      return {}
+    }
+    for (const message of this.findMany(uids)) {
+      message.mailbox = 'Trash'
+      message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
+    }
     this.save()
     return { movedTo: 'Trash' }
   }
@@ -245,6 +283,11 @@ export class DemoProvider implements MailProvider {
     const message = this.store.messages.find((item) => item.uid === uid)
     if (!message) throw new Error('邮件不存在或已被删除')
     return message
+  }
+
+  private findMany(uids: number[]): DemoMessage[] {
+    const set = new Set(uids)
+    return this.store.messages.filter((item) => set.has(item.uid))
   }
 }
 

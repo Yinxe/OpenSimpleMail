@@ -20,7 +20,7 @@ import { AccountDialog } from '@/components/AccountDialog'
 import { Composer } from '@/components/Composer'
 import { DeleteMessageDialog } from '@/components/DeleteMessageDialog'
 import { Logo } from '@/components/Logo'
-import { MailList, type MailListItem } from '@/components/MailList'
+import { MailList, type MailListItem, mailRowKey } from '@/components/MailList'
 import { MessageReader } from '@/components/MessageReader'
 import { folderLabel, Sidebar } from '@/components/Sidebar'
 import { api, errorMessage } from '@/lib/api'
@@ -54,6 +54,12 @@ interface ComposeState {
   mode: ComposeMode
   source?: MessageDetailDto
   key: string
+}
+
+interface BulkTarget {
+  accountId: string
+  mailbox: string
+  uids: number[]
 }
 
 function withFlags(flags: string[], update: { seen?: boolean; flagged?: boolean }): string[] {
@@ -117,6 +123,9 @@ export function MailPage() {
   const previousPageSize = useRef(preferences.pageSize)
   const [addOpen, setAddOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const selectionAnchor = useRef<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DeleteTarget | null>(null)
   const [keepDeleteConfirm, setKeepDeleteConfirm] = useState(true)
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
@@ -207,6 +216,13 @@ export function MailPage() {
       update({ mailbox: pickMailbox(activeMailboxes), uid: null })
     }
   }, [activeAccount, activeMailboxes, mailboxParam, starred, update])
+
+  // Selection belongs to the current folder/page/search, not to the message view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset the selection when the list context changes
+  useEffect(() => {
+    setSelectedRows(new Set())
+    selectionAnchor.current = null
+  }, [accountParam, mailboxParam, page, query])
 
   const messagesQuery = useQuery({
     queryKey: ['messages', accountParam, mailboxParam, page, preferences.pageSize, query],
@@ -553,6 +569,152 @@ export function MailPage() {
     return item.mailbox ?? (item.accountId || starred ? DEFAULT_MAILBOX : mailboxParam)
   }
 
+  function rowKeyOf(item: MailListItem): string {
+    return mailRowKey(item, activeAccount?.id ?? null)
+  }
+
+  function toggleSelect(item: MailListItem, shiftKey: boolean) {
+    const key = rowKeyOf(item)
+    setSelectedRows((current) => {
+      const next = new Set(current)
+      const anchor = selectionAnchor.current
+      if (shiftKey && anchor) {
+        const from = items.findIndex((candidate) => rowKeyOf(candidate) === anchor)
+        const to = items.findIndex((candidate) => rowKeyOf(candidate) === key)
+        if (from >= 0 && to >= 0) {
+          const [start, end] = from <= to ? [from, to] : [to, from]
+          for (let index = start; index <= end; index += 1) {
+            const candidate = items[index]
+            if (candidate) next.add(rowKeyOf(candidate))
+          }
+          return next
+        }
+      }
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+    selectionAnchor.current = key
+  }
+
+  function toggleSelectAll() {
+    if (items.length === 0) return
+    const keys = items.map(rowKeyOf)
+    const allSelected = keys.every((key) => selectedRows.has(key))
+    setSelectedRows(allSelected ? new Set() : new Set(keys))
+    selectionAnchor.current = null
+  }
+
+  function clearSelection() {
+    setSelectedRows(new Set())
+    selectionAnchor.current = null
+  }
+
+  function bulkTargets(): BulkTarget[] {
+    const groups = new Map<string, BulkTarget>()
+    for (const item of items) {
+      if (!selectedRows.has(rowKeyOf(item))) continue
+      const accountId = item.accountId ?? activeAccount?.id
+      if (!accountId) continue
+      const mailbox = item.mailbox ?? mailboxParam
+      const key = `${accountId}:${mailbox}`
+      const group = groups.get(key) ?? { accountId, mailbox, uids: [] }
+      group.uids.push(item.uid)
+      groups.set(key, group)
+    }
+    return [...groups.values()]
+  }
+
+  function archiveMailboxFor(accountId: string): string | null {
+    const index = accounts.findIndex((account) => account.id === accountId)
+    const mailboxes = index >= 0 ? (mailboxQueries[index]?.data ?? []) : []
+    return (
+      mailboxes.find(
+        (mailbox) =>
+          mailbox.specialUse === '\\Archive' || /^(archive|all mail|归档)$/i.test(mailbox.name),
+      )?.path ?? null
+    )
+  }
+
+  async function runBulk(operation: 'read' | 'unread' | 'archive' | 'delete') {
+    const targets = bulkTargets()
+    const count = targets.reduce((sum, target) => sum + target.uids.length, 0)
+    if (count === 0) return
+    if (operation === 'delete' && !window.confirm(`删除选中的 ${count} 封邮件？`)) return
+
+    let affected = count
+    setBulkBusy(true)
+    try {
+      if (operation === 'read' || operation === 'unread') {
+        const seen = operation === 'read'
+        await Promise.all(
+          targets.map((target) =>
+            api.post(`/accounts/${target.accountId}/messages/bulk/flags`, {
+              mailbox: target.mailbox,
+              uids: target.uids,
+              seen,
+            }),
+          ),
+        )
+      } else if (operation === 'archive') {
+        const moves: { target: BulkTarget; destination: string }[] = []
+        for (const target of targets) {
+          const destination = archiveMailboxFor(target.accountId)
+          if (destination && destination !== target.mailbox) {
+            moves.push({ target, destination })
+          }
+        }
+        if (moves.length === 0) {
+          toast.error('无法归档', '当前账户没有可用的归档文件夹')
+          return
+        }
+        affected = moves.reduce((sum, move) => sum + move.target.uids.length, 0)
+        await Promise.all(
+          moves.map(({ target, destination }) =>
+            api.post(`/accounts/${target.accountId}/messages/bulk/move`, {
+              mailbox: target.mailbox,
+              uids: target.uids,
+              destination,
+            }),
+          ),
+        )
+      } else {
+        await Promise.all(
+          targets.map((target) =>
+            api.post(`/accounts/${target.accountId}/messages/bulk/delete`, {
+              mailbox: target.mailbox,
+              uids: target.uids,
+            }),
+          ),
+        )
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+      if (
+        (operation === 'delete' || operation === 'archive') &&
+        selectedKey &&
+        selectedRows.has(selectedKey)
+      ) {
+        update({ uid: null, openAccount: null, openMailbox: null })
+      }
+      clearSelection()
+      toast.success(
+        operation === 'delete'
+          ? `已删除 ${affected} 封邮件`
+          : operation === 'archive'
+            ? `已归档 ${affected} 封邮件`
+            : `已更新 ${affected} 封邮件`,
+      )
+    } catch (error) {
+      toast.error('批量操作失败', errorMessage(error))
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   function selectMessage(item: MailListItem) {
     const accountId = item.accountId ?? activeAccount?.id
     if (!accountId) return
@@ -720,6 +882,9 @@ export function MailPage() {
     ? accounts.reduce((sum, account) => sum + (accountUnread[account.id] ?? 0), 0)
     : (currentMailbox?.unread ?? 0)
   const canMarkAllRead = !starred && (unified ? accounts.length > 0 : Boolean(activeAccount))
+  const canBulkArchive = unified
+    ? accounts.some((account) => archiveMailboxFor(account.id) !== null)
+    : archiveMailboxFor(activeAccount?.id ?? '') !== null
 
   useEffect(() => {
     const subject = detailQuery.data?.subject?.trim()
@@ -771,8 +936,12 @@ export function MailPage() {
         openCompose('replyAll', detailQuery.data)
         return
       }
-      if (event.key === 'Escape' && uidParam) {
-        update({ uid: null, openAccount: null, openMailbox: null })
+      if (event.key === 'Escape') {
+        if (selectedRows.size > 0) {
+          clearSelection()
+          return
+        }
+        if (uidParam) update({ uid: null, openAccount: null, openMailbox: null })
       }
     }
 
@@ -860,6 +1029,16 @@ export function MailPage() {
             loading={listLoading}
             refreshing={listFetching}
             selectedKey={selectedKey}
+            activeAccountId={activeAccount?.id ?? null}
+            selectedRows={selectedRows}
+            onToggleSelect={toggleSelect}
+            onSelectAll={toggleSelectAll}
+            onClearSelection={clearSelection}
+            onBulkRead={(seen) => void runBulk(seen ? 'read' : 'unread')}
+            onBulkArchive={() => void runBulk('archive')}
+            onBulkDelete={() => void runBulk('delete')}
+            bulkBusy={bulkBusy}
+            canBulkArchive={canBulkArchive}
             total={total}
             page={page}
             pageSize={preferences.pageSize}

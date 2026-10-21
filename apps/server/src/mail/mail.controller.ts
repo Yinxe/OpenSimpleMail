@@ -19,6 +19,9 @@ import type { Response } from 'express'
 import { memoryStorage } from 'multer'
 import { CurrentUser } from '../auth/auth.decorators'
 import {
+  BulkDeleteDto,
+  BulkFlagUpdateDto,
+  BulkMoveDto,
   FlagUpdateDto,
   ListMessagesQueryDto,
   MailboxQueryDto,
@@ -98,6 +101,39 @@ export class MailController {
     @Body() body: MailboxQueryDto,
   ): Promise<void> {
     await this.mail.markMailboxRead(userId, accountId, body.mailbox)
+  }
+
+  @Post('messages/bulk/flags')
+  @HttpCode(204)
+  async bulkFlags(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Body() body: BulkFlagUpdateDto,
+  ): Promise<void> {
+    await this.mail.setFlagsMany(userId, accountId, body.mailbox, body.uids, {
+      seen: body.seen,
+      flagged: body.flagged,
+    })
+  }
+
+  @Post('messages/bulk/move')
+  @HttpCode(204)
+  async bulkMove(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Body() body: BulkMoveDto,
+  ): Promise<void> {
+    await this.mail.moveMany(userId, accountId, body.mailbox, body.uids, body.destination)
+  }
+
+  @Post('messages/bulk/delete')
+  @HttpCode(200)
+  async bulkDelete(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Body() body: BulkDeleteDto,
+  ): Promise<{ movedTo?: string }> {
+    return this.mail.removeMany(userId, accountId, body.mailbox, body.uids)
   }
 
   @Post('messages/:uid/flags')

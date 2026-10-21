@@ -22,6 +22,11 @@ function createClient(creds: MailCredentials, verifyOnly = false): ImapFlow {
     logger: false,
     clientInfo: { name: 'OpenSimpleMail', version: '0.1.0', vendor: 'OpenSimpleMail' },
     disableAutoIdle: true,
+    // QQ Mail / 163 are known to drop connections when COMPRESS, ENABLE or
+    // BINARY extensions are negotiated. None of them are required by this app.
+    disableCompression: true,
+    disableAutoEnable: true,
+    disableBinary: true,
     verifyOnly,
     connectionTimeout: 20_000,
     greetingTimeout: 12_000,
@@ -62,7 +67,10 @@ export class ImapPool implements OnModuleDestroy {
         const connectionLost = !entry.client.usable
         if (connectionLost) this.drop(creds.accountId, entry)
         if (connectionLost && attempt === 0) {
-          this.logger.debug(`Retrying IMAP operation for ${creds.email} after connection loss`)
+          this.logger.warn(`IMAP operation for ${creds.email} lost the connection, retrying once`)
+          // Give providers that enforce short-lived sessions a moment to release
+          // the previous socket before opening a new one.
+          await new Promise((resolve) => setTimeout(resolve, 400))
           continue
         }
         throw error
@@ -120,7 +128,16 @@ export class ImapPool implements OnModuleDestroy {
     // unhandled EventEmitter error that crashes the whole server.
     client.on('error', (error: Error) => {
       if (this.entries.get(creds.accountId) !== entry) return
-      this.logger.warn(`IMAP connection for ${creds.email} failed: ${error.message}`)
+      const detail = error as Error & {
+        code?: string
+        command?: string
+        responseText?: string
+      }
+      this.logger.warn(
+        `IMAP connection for ${creds.email} failed: ${error.message}` +
+          (detail.code ? ` [code=${detail.code}]` : '') +
+          (detail.command ? ` [command=${detail.command}]` : ''),
+      )
       this.drop(creds.accountId, entry)
     })
     client.on('close', () => {
