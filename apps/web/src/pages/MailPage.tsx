@@ -34,6 +34,7 @@ import type { ComposeMode } from '@/lib/drafts'
 import { displayAddress } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { MessageKey } from '@/lib/locales'
+import { useMailEvents } from '@/lib/mail-events'
 import { useToast } from '@/lib/toast'
 import { useNewMailNotifications, useUnreadBadge } from '@/lib/unread'
 
@@ -142,6 +143,13 @@ export function MailPage() {
   const toast = useToast()
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  // New mail is pushed from the server's IMAP watcher; refetch immediately
+  // instead of waiting for the next poll interval.
+  const onMailEvent = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['messages'] })
+    void queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+  }, [queryClient])
+  useMailEvents(onMailEvent)
   const [params, setParams] = useSearchParams()
   const searchRef = useRef<HTMLInputElement>(null)
 

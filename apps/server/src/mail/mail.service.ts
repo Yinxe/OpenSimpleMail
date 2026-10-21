@@ -20,7 +20,7 @@ import { ContactsService } from '../contacts/contacts.service'
 import { DemoService } from '../demo/demo.service'
 import { AttachmentStorage } from './attachment-storage'
 import { ImapPool } from './imap.pool'
-import { ImapProvider } from './imap.provider'
+import { ImapProvider, invalidateAccountCaches } from './imap.provider'
 import type {
   AttachmentPayload,
   DraftPayload,
@@ -223,6 +223,16 @@ export class MailService {
     for (const key of [...this.unifiedPages.keys()]) {
       if (key.startsWith(prefix)) this.unifiedPages.delete(key)
     }
+  }
+
+  /**
+   * Forget every cached view of an account. The IMAP watcher calls this when the
+   * server reports new mail, so a refetch started right after a push is not
+   * answered from a page that was cached a second before the message landed.
+   */
+  invalidateAccount(accountId: string): void {
+    this.dropUnifiedPages(accountId)
+    invalidateAccountCaches(accountId)
   }
 
   async getMessage(

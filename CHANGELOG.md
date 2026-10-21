@@ -46,6 +46,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- New mail is pushed instead of polled: while a tab is open the server keeps one IMAP connection per account in IDLE on INBOX, drops that account's folder and list caches the moment the server reports `EXISTS`, and tells the browser over `GET /api/events` (server-sent events) to refetch, so a message appears after roughly one round-trip instead of waiting for the next poll. Watchers are torn down when the last tab disconnects and rebuilt 30 seconds after a dropped connection; polling remains as the fallback.
 - The unified inbox caches each account's list page for 20 seconds and fetches accounts in parallel, so paging to page N reuses the pages fetched for page N-1 instead of re-running every earlier IMAP fetch; flag, move, delete, send and folder changes invalidate the affected account's cache.
 - The sidebar groups mailboxes into a tree using each account's IMAP delimiter: parent folders expand and collapse, and intermediate levels without a real mailbox render as plain group labels.
 - Attachment upload progress in the composer: sending with attachments goes through XHR so the footer can show "正在上传附件 N%" before switching to the sending state.

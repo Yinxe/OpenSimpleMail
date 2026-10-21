@@ -8,6 +8,8 @@ import { DemoModule } from '../demo/demo.module'
 import { AttachmentStorage } from './attachment-storage'
 import { MAX_UPLOAD_FILES, MailController } from './mail.controller'
 import { MailService } from './mail.service'
+import { MailEventsController } from './mail-events.controller'
+import { MailEventsService } from './mail-events.service'
 import { MailStorageModule } from './mail-storage.module'
 import { MailTransportModule } from './mail-transport.module'
 import { UnifiedController } from './unified.controller'
@@ -33,7 +35,7 @@ import { UnifiedController } from './unified.controller'
       }),
     }),
   ],
-  controllers: [MailController, UnifiedController],
-  providers: [MailService, ClamAvService],
+  controllers: [MailController, UnifiedController, MailEventsController],
+  providers: [MailService, MailEventsService, ClamAvService],
 })
 export class MailModule {}

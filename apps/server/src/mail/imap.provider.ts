@@ -120,6 +120,16 @@ function dropStarredCache(accountId: string): void {
   }
 }
 
+/**
+ * Forget what we cached about an account. The new-mail watcher calls this the
+ * moment the server reports EXISTS, so the next request sees the new message
+ * instead of a list that was built a few seconds earlier.
+ */
+export function invalidateAccountCaches(accountId: string): void {
+  dropMailboxCache(accountId)
+  dropStarredCache(accountId)
+}
+
 function readStarredCache(accountId: string, query: string): MessageSummaryDto[] | null {
   const key = `${accountId}\u0000${query}`
   const entry = starredCache.get(key)

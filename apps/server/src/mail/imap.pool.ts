@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common'
-import { ImapFlow } from 'imapflow'
+import type { ImapFlow } from 'imapflow'
+import { createImapClient } from './imap-client'
 import type { MailCredentials } from './mail.types'
 
 interface PoolEntry {
@@ -12,30 +13,6 @@ interface PoolEntry {
 }
 
 const IDLE_CLOSE_MS = 5 * 60 * 1000
-
-function createClient(creds: MailCredentials, verifyOnly = false): ImapFlow {
-  return new ImapFlow({
-    host: creds.imap.host,
-    port: creds.imap.port,
-    secure: creds.imap.secure,
-    auth: { user: creds.username, pass: creds.password },
-    logger: false,
-    clientInfo: { name: 'OpenSimpleMail', version: '0.1.0', vendor: 'OpenSimpleMail' },
-    disableAutoIdle: true,
-    // QQ Mail / 163 are known to drop connections when COMPRESS, ENABLE or
-    // BINARY extensions are negotiated. None of them are required by this app.
-    disableCompression: true,
-    disableAutoEnable: true,
-    disableBinary: true,
-    verifyOnly,
-    connectionTimeout: 20_000,
-    greetingTimeout: 12_000,
-    // Keep the socket alive longer than the 5-minute pool idle close; a shorter
-    // timeout would tear down healthy idle connections (and used to crash Node).
-    socketTimeout: 10 * 60 * 1000,
-    tls: { servername: creds.imap.host },
-  })
-}
 
 /**
  * One serialized IMAP connection per account. IMAP has a single selected mailbox
@@ -85,7 +62,7 @@ export class ImapPool implements OnModuleDestroy {
 
   /** Opens a throwaway connection, which keeps credential checks out of the pool. */
   async verify(creds: MailCredentials): Promise<void> {
-    const client = createClient(creds, true)
+    const client = createImapClient(creds, { verifyOnly: true })
     // ImapFlow emits connection-level errors on the instance. Without a listener
     // Node would treat it as an unhandled 'error' event and terminate the process.
     client.on('error', (error: Error) => {
@@ -114,7 +91,7 @@ export class ImapPool implements OnModuleDestroy {
     if (existing?.client.usable) return existing
     if (existing) this.drop(creds.accountId, existing)
 
-    const client = createClient(creds)
+    const client = createImapClient(creds)
     const entry: PoolEntry = {
       client,
       ready: Promise.resolve(),
