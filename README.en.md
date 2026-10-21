@@ -12,6 +12,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 
 - First-run setup wizard: create the administrator and choose the initial site name, registration and demo policy
 - Administrator role with a public-registration switch; disabling it hides the sign-up UI and rejects the API server-side
+- Account security: change the password (other sessions are revoked), and manage sessions with browser, IP and sign-in time
 - Per-user preferences stored server-side: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
 - Folder management from the sidebar: create, rename and delete custom folders, or empty the trash; special folders are not deletable
@@ -69,7 +70,28 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Mail data and accounts live in the `open-simple-mail-data` volume. Attachments stay inside it too: outgoing uploads and extracted attachments are written to `data/attachments/` and removed once they are no longer needed, so no extra volume is required. Administrators can watch the usage and clear it from Settings → Attachment cache.
+If the Debian mirrors are slow from your network, point the build at another one:
+
+```bash
+docker compose build --build-arg APT_MIRROR=mirrors.ustc.edu.cn
+docker compose up -d
+```
+
+Everything lives in the host's `./data` directory, bind-mounted at `/app/data`: the SQLite database and the attachment cache under `attachments/`.
+
+- Back it up with `cp -a data data.bak`; `docker compose down` (even with `-v`) leaves it alone because no named volume is involved.
+- The container starts as root, takes ownership of `./data` for the image's `node` user (uid 1000) and immediately drops privileges, so the mount works whatever user owns the host directory. Only override `user:` in compose if you chown it yourself.
+- Attachments need no separate mount: uploads and extracted attachments live in `./data/attachments`, are removed once they are no longer needed, and administrators can inspect and clear them from Settings → Attachment cache.
+- Local development and Docker share `./data`; do not run both at the same time.
+
+Migrating from the old named volume:
+
+```bash
+docker compose down
+VOLUME=$(docker volume ls --format '{{.Name}}' | grep open-simple-mail-data | head -1)
+mkdir -p data
+docker run --rm -v "$VOLUME":/from -v "$PWD/data":/to alpine cp -a /from/. /to/
+```
 
 ## First-run setup and roles
 

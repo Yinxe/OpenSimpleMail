@@ -15,6 +15,7 @@ OpenSimpleMail 让你在一个界面里管理多个 IMAP / SMTP 邮箱：统一�
 
 - **首次启动向导**：第一次访问时创建管理员账号，并完成站点名称、公开注册、演示模式等初始配置。
 - **管理员与注册开关**：管理员可随时开启/关闭公开注册；关闭后登录页隐藏注册入口，注册接口直接拒绝。
+- **账号安全**：修改密码（自动踢掉其他设备）、会话列表（浏览器 / IP / 登录时间）与逐个撤销。
 - **用户级使用偏好**：自动刷新间隔、每页数量、默认视图、列表密度、自动已读、远程图片策略都可以自己配置，并保存在服务端。
 
 - **多邮箱账户**：添加任意数量的 IMAP / SMTP 邮箱，独立连接、独立文件夹与未读计数。
@@ -99,9 +100,28 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-数据保存在命名卷 `open-simple-mail-data` 中（容器内 `/app/data`）。默认映射到宿主机 `4000` 端口。
+国内网络拉 Debian 包慢时，先换源再构建：
 
-附件不会突破这个卷：发信上传和收信解析出的附件都写在 `data/attachments/` 下，发送完成或缓存过期即删除，所以**不需要额外挂载存储目录**。只有把 `DATABASE_PATH` 改到 `/app/data` 之外时，才需要为那个路径再挂一个卷。管理员可以在「设置 → 附件缓存」里看到当前占用并一键清理。
+```bash
+docker compose build --build-arg APT_MIRROR=mirrors.ustc.edu.cn
+docker compose up -d
+```
+
+数据直接落在宿主机的 `./data` 目录（容器内 `/app/data`）：SQLite 数据库 `open-simple-mail.db`、附件缓存 `attachments/` 都在里面。默认映射到宿主机 `4000` 端口。
+
+- 备份就是 `cp -a data data.bak`；`docker compose down` 不会删除它，`down -v` 也不会（这里没有命名卷）。
+- 容器以 root 启动，先把 `./data` 的属主改成镜像内的 `node`（uid 1000），随后立即降权运行，所以宿主机目录属于谁都能跑起来。只有你在 compose 里覆盖了 `user:`，才需要自己先 `sudo chown -R 1000:1000 data`。
+- 附件缓存不用单独挂载：它就在 `./data/attachments` 里，发送完成或缓存过期即删除；管理员也可以在「设置 → 附件缓存」里查看占用并一键清理。
+- 本地开发和 Docker 用的是同一个 `./data`，不要同时启动两边（SQLite 会被两个进程同时写）。
+
+从旧版本（命名卷）升级时，先把卷里的数据搬到 `./data`：
+
+```bash
+docker compose down
+VOLUME=$(docker volume ls --format '{{.Name}}' | grep open-simple-mail-data | head -1)
+mkdir -p data
+docker run --rm -v "$VOLUME":/from -v "$PWD/data":/to alpine cp -a /from/. /to/
+```
 
 ## 配置
 

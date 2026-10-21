@@ -38,7 +38,11 @@ export class SetupController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<SetupResponse> {
-    const session = await this.auth.completeSetup(dto, req.get('user-agent'))
+    const session = await this.auth.completeSetup(
+      dto,
+      req.get('user-agent'),
+      req.ip || req.socket?.remoteAddress || undefined,
+    )
     attachSessionCookie(res, session, this.config)
     return { user: session.user }
   }

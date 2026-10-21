@@ -6,10 +6,9 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Account security in Settings: change the password (the current one is verified, the new hash replaces it and every other session is revoked in the same transaction) and manage sessions — the list shows browser, IP and sign-in time, with per-session revoke and "sign out other devices". Session rows now record the client IP through a small migration.
+
 - Administrator "attachment cache" panel under Settings: it shows how many messages are extracted, the disk usage against the configured budget, and a confirmed "clear cache" action (`GET` / `DELETE /api/admin/attachments`) that drops every extracted attachment without touching mail on the server. Parses already in flight are not written back into the cleared cache.
-
-### Added
-
 - Drafts are mirrored into the account's IMAP Drafts folder: `POST /accounts/:id/drafts` appends a `\Draft` copy (replacing the previous one, so the folder does not collect duplicates) and `DELETE /accounts/:id/drafts/:uid` removes it. Opening a message from Drafts shows "继续编辑", which reopens the composer with its recipients, subject and body; sending or discarding deletes the server copy. Servers without UIDPLUS keep drafts local only.
 
 ### Changed
@@ -18,11 +17,11 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 - Stream attachments through disk instead of the heap: outgoing uploads are written to `data/attachments/upload/` and read back by the MIME composer, while incoming messages are parsed from the IMAP stream with each attachment extracted to `data/attachments/cache/`. A 25 MB send or a 40 MB message no longer holds tens of megabytes in memory.
 - Replace the in-memory parsed-message cache with one that keeps only the text body and attachment metadata, backed by a disk cache bounded by `ATTACHMENT_CACHE_MB` (default 256 MB), evicted least-recently-used and swept on startup.
 - Report the real attachment size in the reader (it used to be missing for IMAP accounts), and inline `cid:` images from the disk cache under a 12 MB total budget.
+- Docker: bind-mount `./data` instead of the `open-simple-mail-data` volume, so the SQLite file and the attachment cache are ordinary host files that survive `docker compose down -v` and can be backed up with `cp -a`. The image now starts as root, fixes the ownership of the mounted directory for the `node` user and drops privileges through `gosu` (`docker-entrypoint.sh`), and it accepts an optional `APT_MIRROR` build arg for slow Debian mirrors. Migration from the old volume is documented in the README.
 
 ### Fixed
 
 - Show "N accounts could not be read" above the unified inbox instead of silently returning fewer messages than the account list suggests.
-
 - Keep a strong active style on the opened message row, including in the starred view, by matching the message's real folder and using an accent bar instead of a subtle tint.
 - Cache folder counts for 45 seconds and pipeline STATUS requests, so sidebar refresh no longer performs one sequential round-trip per folder.
 - Show an explicit error state with retry in the message list instead of rendering an IMAP failure as "no messages".

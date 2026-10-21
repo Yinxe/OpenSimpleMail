@@ -10,14 +10,14 @@ import {
   PreconditionFailedException,
   UnauthorizedException,
 } from '@nestjs/common'
-import type { UserDto } from '@osm/shared'
+import type { SessionDto, UserDto } from '@osm/shared'
 import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { CryptoService } from '../core/crypto.service'
 import { DatabaseService } from '../core/database.service'
 import { DemoService } from '../demo/demo.service'
 import { SettingsService } from '../settings/settings.service'
 import type { SetupDto } from '../setup/setup.dto'
-import type { LoginDto, RecoverAdminDto, RegisterDto } from './auth.dto'
+import type { ChangePasswordDto, LoginDto, RecoverAdminDto, RegisterDto } from './auth.dto'
 
 export const SESSION_COOKIE = 'osm_session'
 
@@ -32,6 +32,15 @@ interface UserRow {
 }
 
 interface SessionRow extends UserRow {
+  expires_at: string
+}
+
+interface SessionListRow {
+  id: string
+  token_hash: string
+  user_agent: string | null
+  ip: string | null
+  created_at: string
   expires_at: string
 }
 
@@ -64,7 +73,7 @@ export class AuthService {
     private readonly settings: SettingsService,
   ) {}
 
-  async register(dto: RegisterDto, userAgent?: string): Promise<SessionResult> {
+  async register(dto: RegisterDto, userAgent?: string, ip?: string): Promise<SessionResult> {
     const settings = this.settings.get()
     if (!settings.initialized) {
       throw new PreconditionFailedException('系统尚未初始化，请先完成启动引导')
@@ -94,10 +103,10 @@ export class AuthService {
       )
       .run(user)
 
-    return this.createSession(toUserDto(user), userAgent)
+    return this.createSession(toUserDto(user), userAgent, ip)
   }
 
-  async login(dto: LoginDto, userAgent?: string): Promise<SessionResult> {
+  async login(dto: LoginDto, userAgent?: string, ip?: string): Promise<SessionResult> {
     if (!this.settings.isInitialized()) {
       throw new PreconditionFailedException('系统尚未初始化，请先完成启动引导')
     }
@@ -114,10 +123,10 @@ export class AuthService {
     }
 
     this.db.db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(new Date().toISOString())
-    return this.createSession(toUserDto(row), userAgent)
+    return this.createSession(toUserDto(row), userAgent, ip)
   }
 
-  async demoLogin(userAgent?: string): Promise<SessionResult> {
+  async demoLogin(userAgent?: string, ip?: string): Promise<SessionResult> {
     const settings = this.settings.get()
     if (!settings.initialized) {
       throw new PreconditionFailedException('系统尚未初始化，请先完成启动引导')
@@ -153,7 +162,11 @@ export class AuthService {
    * also replaces the password and invalidates every existing session for the
    * account, so the operator can remove the environment variable afterwards.
    */
-  async recoverAdmin(dto: RecoverAdminDto, userAgent?: string): Promise<SessionResult> {
+  async recoverAdmin(
+    dto: RecoverAdminDto,
+    userAgent?: string,
+    ip?: string,
+  ): Promise<SessionResult> {
     if (!this.config.adminRecoveryPassword) {
       throw new NotFoundException('管理员恢复未启用')
     }
@@ -186,14 +199,14 @@ export class AuthService {
     this.logger.warn(
       `Administrator recovery used for ${email}; unset ADMIN_RECOVERY_PASSWORD after signing in`,
     )
-    return this.createSession(toUserDto({ ...row, password_hash: passwordHash }), userAgent)
+    return this.createSession(toUserDto({ ...row, password_hash: passwordHash }), userAgent, ip)
   }
 
   /**
    * First-run setup: create the administrator and persist the initial system
    * configuration in one transaction. The wizard is the only caller.
    */
-  async completeSetup(dto: SetupDto, userAgent?: string): Promise<SessionResult> {
+  async completeSetup(dto: SetupDto, userAgent?: string, ip?: string): Promise<SessionResult> {
     if (this.settings.isInitialized()) {
       throw new ConflictException('系统已经初始化，无需重复执行启动引导')
     }
@@ -264,7 +277,88 @@ export class AuthService {
     this.db.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(this.crypto.sha256(token))
   }
 
-  private createSession(user: UserDto, userAgent?: string): SessionResult {
+  /**
+   * Change the signed-in user's password. Every other session is revoked in the
+   * same transaction, so a leaked cookie stops working as soon as the owner
+   * notices.
+   */
+  async changePassword(
+    userId: string,
+    token: string | undefined,
+    dto: ChangePasswordDto,
+  ): Promise<void> {
+    const row = this.db.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
+      | UserRow
+      | undefined
+    if (!row) throw new NotFoundException('用户不存在')
+    if (row.is_demo === 1) throw new ForbiddenException('演示账号不支持修改密码')
+
+    const valid = await this.crypto.verifyPassword(dto.currentPassword, row.password_hash)
+    if (!valid) throw new UnauthorizedException('当前密码不正确')
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException('新密码不能与当前密码相同')
+    }
+
+    const passwordHash = await this.crypto.hashPassword(dto.newPassword)
+    const keep = token ? this.crypto.sha256(token) : null
+    const transaction = this.db.db.transaction(() => {
+      this.db.db
+        .prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        .run(passwordHash, userId)
+      if (keep) {
+        this.db.db
+          .prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?')
+          .run(userId, keep)
+      } else {
+        this.db.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
+      }
+    })
+    transaction()
+    this.logger.log(`Password changed for ${row.email}; other sessions revoked`)
+  }
+
+  listSessions(userId: string, token: string | undefined): SessionDto[] {
+    const currentHash = token ? this.crypto.sha256(token) : null
+    const rows = this.db.db
+      .prepare(
+        `SELECT id, token_hash, user_agent, ip, created_at, expires_at FROM sessions
+         WHERE user_id = ? AND expires_at > ?
+         ORDER BY created_at DESC`,
+      )
+      .all(userId, new Date().toISOString()) as SessionListRow[]
+
+    return rows.map((row) => ({
+      id: row.id,
+      userAgent: row.user_agent,
+      ip: row.ip,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      current: currentHash !== null && row.token_hash === currentHash,
+    }))
+  }
+
+  revokeSession(userId: string, sessionId: string, token: string | undefined): void {
+    const row = this.db.db
+      .prepare('SELECT token_hash FROM sessions WHERE id = ? AND user_id = ?')
+      .get(sessionId, userId) as { token_hash: string } | undefined
+    if (!row) throw new NotFoundException('会话不存在')
+    if (token && row.token_hash === this.crypto.sha256(token)) {
+      throw new BadRequestException('当前会话请使用退出登录')
+    }
+    this.db.db.prepare('DELETE FROM sessions WHERE id = ? AND user_id = ?').run(sessionId, userId)
+  }
+
+  revokeOtherSessions(userId: string, token: string | undefined): number {
+    const hash = token ? this.crypto.sha256(token) : null
+    const info = hash
+      ? this.db.db
+          .prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?')
+          .run(userId, hash)
+      : this.db.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
+    return info.changes
+  }
+
+  private createSession(user: UserDto, userAgent?: string, ip?: string): SessionResult {
     const token = this.crypto.randomToken(32)
     const now = new Date()
     const maxAgeMs = this.config.sessionDays * 24 * 60 * 60 * 1000
@@ -272,14 +366,15 @@ export class AuthService {
 
     this.db.db
       .prepare(
-        `INSERT INTO sessions (id, user_id, token_hash, user_agent, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (id, user_id, token_hash, user_agent, ip, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         randomUUID(),
         user.id,
         this.crypto.sha256(token),
         userAgent?.slice(0, 255) ?? null,
+        ip?.slice(0, 64) ?? null,
         now.toISOString(),
         expiresAt.toISOString(),
       )

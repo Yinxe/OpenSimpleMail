@@ -31,6 +31,7 @@ import { AccountDialog } from '@/components/AccountDialog'
 import { Avatar } from '@/components/Avatar'
 import { Logo } from '@/components/Logo'
 import { Modal } from '@/components/Modal'
+import { SecurityCard } from '@/components/SecurityCard'
 import { Spinner } from '@/components/Spinner'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { api, errorMessage } from '@/lib/api'
@@ -486,6 +487,8 @@ export function SettingsPage() {
             </div>
           </section>
         ) : null}
+
+        <SecurityCard />
 
         <section className="settings-card">
           <div className="settings-card__head">

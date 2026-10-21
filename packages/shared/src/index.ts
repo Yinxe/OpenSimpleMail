@@ -207,6 +207,16 @@ export interface MoveOutcomeDto {
 }
 
 /** Where the server-side copy of a draft lives, so the client can replace or delete it. */
+export interface SessionDto {
+  id: string
+  userAgent: string | null
+  ip: string | null
+  createdAt: string
+  expiresAt: string
+  /** True for the session that made the request. */
+  current: boolean
+}
+
 export interface SavedDraftDto {
   mailbox: string
   uid: number

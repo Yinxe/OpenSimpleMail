@@ -35,3 +35,13 @@ export class LoginDto {
   @Length(1, 128)
   password!: string
 }
+
+export class ChangePasswordDto {
+  @IsString()
+  @Length(1, 128, { message: '请输入当前密码' })
+  currentPassword!: string
+
+  @IsString()
+  @Length(8, 128, { message: '新密码至少需要 8 个字符' })
+  newPassword!: string
+}

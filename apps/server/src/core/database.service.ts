@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL UNIQUE,
   user_agent TEXT,
+  ip         TEXT,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL
 );
@@ -111,6 +112,13 @@ export class DatabaseService implements OnModuleDestroy {
     const userColumns = this.db.prepare('PRAGMA table_info(users)').all() as { name: string }[]
     if (!userColumns.some((column) => column.name === 'is_admin')) {
       this.db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+    }
+
+    const sessionColumns = this.db.prepare('PRAGMA table_info(sessions)').all() as {
+      name: string
+    }[]
+    if (!sessionColumns.some((column) => column.name === 'ip')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN ip TEXT')
     }
 
     const accountColumns = this.db.prepare('PRAGMA table_info(accounts)').all() as {
