@@ -43,6 +43,9 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Attachment upload progress in the composer: sending with attachments goes through XHR so the footer can show "正在上传附件 N%" before switching to the sending state.
+- "Do not ask again" in the delete dialog now applies to the account being cleaned up instead of every mailbox; the Settings switch stays a global default.
+
 - Interface language switch (简体中文 / English) in Settings → Appearance: a small `t()` helper with a flat zh/en dictionary, `{name}` interpolation, browser-language detection and a `localStorage` preference that also updates `<html lang>`. The login page (including two-factor and admin recovery), the Settings headings and the message list (toolbar, search, bulk bar, empty and error states, row hints) and the composer (fields, toolbar, send/undo/discard, draft status, quote and forward templates) are translated; the reader (three views, verification code card, attachments, blocked images) and the sidebar (folder labels, folder actions, account and settings entries) are translated too; the settings page (accounts, system settings, attachment cache, preferences, appearance, about, clear-cache dialog) and the account-security card are translated too; MailPage toasts, confirmations, the shortcut overlay and the empty/onboarding states are translated too. The register page, account dialog (including provider presets), folder and delete dialogs, the auth layout, boot screen and theme toggle are translated too. The first-run setup wizard, notifications, toast dismissal, request-failure fallback and list pagination are translated too. Server error messages and the verification-code expiry phrase remain Chinese.
 
 - Folder management from the sidebar: create, rename and delete custom folders, and empty the trash; backed by IMAP `CREATE`/`RENAME`/`DELETE`/`CLOSE` and the demo store.

@@ -172,11 +172,6 @@ export function MailPage() {
   const goPrefix = useRef<number | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DeleteTarget | null>(null)
   const [keepDeleteConfirm, setKeepDeleteConfirm] = useState(true)
-  const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
-
-  useEffect(() => {
-    setSkipDeleteConfirm(isDeleteConfirmSkipped(user?.id))
-  }, [user?.id])
 
   const update = useCallback(
     (patch: Record<string, string | null>) => {
@@ -941,7 +936,7 @@ export function MailPage() {
   }
 
   function requestDelete(target: DeleteTarget) {
-    if (skipDeleteConfirm) {
+    if (isDeleteConfirmSkipped(user?.id, target.accountId)) {
       deleteMutation.mutate({
         accountId: target.accountId,
         mailbox: target.mailbox,
@@ -956,8 +951,8 @@ export function MailPage() {
   function confirmDelete() {
     if (!pendingDelete) return
     if (user && !keepDeleteConfirm) {
-      setDeleteConfirmSkipped(user.id, true)
-      setSkipDeleteConfirm(true)
+      // Scoped to this account, so another mailbox still asks first.
+      setDeleteConfirmSkipped(user.id, true, pendingDelete.accountId)
     }
     deleteMutation.mutate({
       accountId: pendingDelete.accountId,

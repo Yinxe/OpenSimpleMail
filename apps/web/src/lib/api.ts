@@ -46,6 +46,55 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T
 }
 
+function parseXhrError(xhr: XMLHttpRequest): ApiError {
+  const status = xhr.status || 0
+  try {
+    const body = JSON.parse(xhr.responseText) as ApiErrorBody
+    const message = Array.isArray(body.message) ? body.message.join('；') : body.message
+    return new ApiError(status, message || fallbackMessage(status))
+  } catch {
+    return new ApiError(status, fallbackMessage(status))
+  }
+}
+
+/**
+ * Multipart POST with upload progress. `fetch` cannot report upload progress,
+ * so composing a message with attachments goes through XHR.
+ */
+function postFormWithProgress<T>(
+  path: string,
+  form: FormData,
+  onProgress: (percent: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api${path}`)
+    xhr.withCredentials = true
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total === 0) return
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (!xhr.responseText) {
+          resolve(undefined as T)
+          return
+        }
+        try {
+          resolve(JSON.parse(xhr.responseText) as T)
+        } catch {
+          resolve(undefined as T)
+        }
+        return
+      }
+      reject(parseXhrError(xhr))
+    }
+    xhr.onerror = () => reject(new ApiError(0, fallbackMessage(0)))
+    xhr.onabort = () => reject(new ApiError(0, fallbackMessage(0)))
+    xhr.send(form)
+  })
+}
+
 export const api = {
   get<T>(path: string): Promise<T> {
     return request<T>(path)
@@ -58,6 +107,13 @@ export const api = {
   },
   postForm<T>(path: string, form: FormData): Promise<T> {
     return request<T>(path, { method: 'POST', body: form })
+  },
+  postFormWithProgress<T>(
+    path: string,
+    form: FormData,
+    onProgress: (percent: number) => void,
+  ): Promise<T> {
+    return postFormWithProgress<T>(path, form, onProgress)
   },
   patch<T>(path: string, body: unknown): Promise<T> {
     return request<T>(path, { method: 'PATCH', body: JSON.stringify(body) })

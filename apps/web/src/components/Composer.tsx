@@ -191,6 +191,7 @@ export function Composer({
   const [subject, setSubject] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const [bodyVersion, setBodyVersion] = useState(0)
@@ -507,8 +508,16 @@ export function Composer({
   }
 
   async function deliver(form: FormData, account: string) {
+    const hasAttachments = files.length > 0
     try {
-      await api.postForm<SendResultDto>(`/accounts/${account}/send`, form)
+      if (hasAttachments) setUploadPercent(0)
+      await (hasAttachments
+        ? api.postFormWithProgress<SendResultDto>(
+            `/accounts/${account}/send`,
+            form,
+            setUploadPercent,
+          )
+        : api.postForm<SendResultDto>(`/accounts/${account}/send`, form))
       sentRef.current = true
       void dropRemoteDraft()
       if (draftKey) clearDraft(draftKey)
@@ -526,6 +535,8 @@ export function Composer({
       setError(errorMessage(caught))
       setSending(false)
       setSendDeadline(null)
+    } finally {
+      setUploadPercent(null)
     }
   }
 
@@ -609,9 +620,11 @@ export function Composer({
             <span className="composer__hint">
               {sending && sendRemaining > 0
                 ? t('composer.sendCountdown', { seconds: sendRemaining })
-                : sending
-                  ? t('composer.sending')
-                  : t('composer.shortcut')}
+                : sending && uploadPercent !== null && uploadPercent < 100
+                  ? t('composer.uploading', { percent: uploadPercent })
+                  : sending
+                    ? t('composer.sending')
+                    : t('composer.shortcut')}
               {draftSavedAt
                 ? ` · ${t('composer.savedAt', { time: formatSavedAt(draftSavedAt) })}`
                 : ''}
