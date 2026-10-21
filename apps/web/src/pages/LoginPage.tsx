@@ -5,11 +5,14 @@ import { AuthLayout } from '@/components/AuthLayout'
 import { Spinner } from '@/components/Spinner'
 import { errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useI18n } from '@/lib/i18n'
 
 type Mode = 'login' | 'recover'
 
 export function LoginPage() {
   const { login, loginTotp, demoLogin, recoverAdmin, config } = useAuth()
+  const { t } = useI18n()
+  const siteName = config?.siteName ?? 'OpenSimpleMail'
   const navigate = useNavigate()
   const [mode, setMode] = useState<Mode>('login')
   const [email, setEmail] = useState('')
@@ -63,11 +66,11 @@ export function LoginPage() {
     event.preventDefault()
     setError('')
     if (newPassword.length < 8) {
-      setError('新密码至少需要 8 个字符')
+      setError(t('login.passwordShort'))
       return
     }
     if (newPassword !== confirmPassword) {
-      setError('两次输入的新密码不一致')
+      setError(t('login.passwordMismatch'))
       return
     }
     setBusy(true)
@@ -112,22 +115,19 @@ export function LoginPage() {
     <AuthLayout version={config?.version}>
       {mode === 'login' && challenge ? (
         <div className="auth-card">
-          <p className="eyebrow">TWO-FACTOR</p>
-          <h2>输入验证码</h2>
-          <p className="auth-card__sub">
-            打开手机上的验证器应用，输入 {config?.siteName ?? 'OpenSimpleMail'} 的 6 位验证码；
-            也可以用一次性恢复码登录。
-          </p>
+          <p className="eyebrow">{t('login.totp.eyebrow')}</p>
+          <h2>{t('login.totp.title')}</h2>
+          <p className="auth-card__sub">{t('login.totp.subtitle', { site: siteName })}</p>
 
           <form className="form" onSubmit={onVerify}>
             <label className="field">
-              <span className="field__label">验证码</span>
+              <span className="field__label">{t('login.totp.code')}</span>
               <span className="field__control">
                 <KeyRound size={16} className="field__icon" />
                 <input
                   inputMode="numeric"
                   autoComplete="one-time-code"
-                  placeholder="6 位数字，或恢复码"
+                  placeholder={t('login.totp.placeholder')}
                   value={totpCode}
                   onChange={(event) => setTotpCode(event.target.value)}
                   required
@@ -139,7 +139,7 @@ export function LoginPage() {
 
             <button type="submit" className="button button--primary button--block" disabled={busy}>
               {busy ? <Spinner /> : <ArrowRight size={17} />}
-              验证并登录
+              {t('login.totp.submit')}
             </button>
           </form>
 
@@ -151,20 +151,18 @@ export function LoginPage() {
               setError('')
             }}
           >
-            <ArrowLeft size={13} /> 返回，重新输入邮箱和密码
+            <ArrowLeft size={13} /> {t('login.totp.back')}
           </button>
         </div>
       ) : mode === 'login' ? (
         <div className="auth-card">
-          <p className="eyebrow">WELCOME BACK</p>
-          <h2>登录你的邮箱工作台</h2>
-          <p className="auth-card__sub">
-            欢迎回到 {config?.siteName ?? 'OpenSimpleMail'}，继续处理那些值得认真回复的邮件。
-          </p>
+          <p className="eyebrow">{t('login.eyebrow')}</p>
+          <h2>{t('login.title')}</h2>
+          <p className="auth-card__sub">{t('login.subtitle', { site: siteName })}</p>
 
           <form className="form" onSubmit={onSubmit}>
             <label className="field">
-              <span className="field__label">邮箱地址</span>
+              <span className="field__label">{t('login.email')}</span>
               <span className="field__control">
                 <Mail size={16} className="field__icon" />
                 <input
@@ -179,7 +177,7 @@ export function LoginPage() {
             </label>
 
             <label className="field">
-              <span className="field__label">密码</span>
+              <span className="field__label">{t('login.password')}</span>
               <span className="field__control">
                 <LockKeyhole size={16} className="field__icon" />
                 <input
@@ -197,20 +195,20 @@ export function LoginPage() {
 
             <button type="submit" className="button button--primary button--block" disabled={busy}>
               {busy ? <Spinner /> : <ArrowRight size={17} />}
-              登录
+              {t('login.submit')}
             </button>
           </form>
 
           {config?.recoveryEnabled ? (
             <button type="button" className="auth-card__recover-link" onClick={openRecovery}>
-              <KeyRound size={13} /> 忘记管理员密码？
+              <KeyRound size={13} /> {t('login.forgot')}
             </button>
           ) : null}
 
           {config?.demoEnabled ? (
             <>
               <div className="divider">
-                <span>或</span>
+                <span>{t('login.divider')}</span>
               </div>
               <button
                 type="button"
@@ -219,36 +217,30 @@ export function LoginPage() {
                 disabled={demoBusy}
               >
                 {demoBusy ? <Spinner /> : <Sparkles size={16} />}
-                用演示邮箱直接体验
+                {t('login.demoButton')}
               </button>
-              <p className="auth-card__hint">
-                演示模式会创建一个临时账号，内置示例邮件，可随意收发。
-              </p>
+              <p className="auth-card__hint">{t('login.demoHint')}</p>
             </>
           ) : null}
 
           {config?.allowRegistration ? (
             <p className="auth-card__switch">
-              还没有账号？<Link to="/register">创建一个</Link>
+              {t('login.registerPrompt')}
+              <Link to="/register">{t('login.registerLink')}</Link>
             </p>
           ) : (
-            <p className="auth-card__hint auth-card__hint--closed">
-              公开注册已关闭。如需账号，请联系系统管理员。
-            </p>
+            <p className="auth-card__hint auth-card__hint--closed">{t('login.registerClosed')}</p>
           )}
         </div>
       ) : (
         <div className="auth-card">
-          <p className="eyebrow">ADMIN RECOVERY</p>
-          <h2>恢复管理员访问</h2>
-          <p className="auth-card__sub">
-            使用服务器环境变量 <code>ADMIN_RECOVERY_PASSWORD</code>{' '}
-            中的临时密码，重置管理员密码并登录。
-          </p>
+          <p className="eyebrow">{t('login.recover.eyebrow')}</p>
+          <h2>{t('login.recover.title')}</h2>
+          <p className="auth-card__sub">{t('login.recover.subtitle')}</p>
 
           <form className="form" onSubmit={onRecover}>
             <label className="field">
-              <span className="field__label">管理员邮箱</span>
+              <span className="field__label">{t('login.recover.email')}</span>
               <span className="field__control">
                 <Mail size={16} className="field__icon" />
                 <input
@@ -263,13 +255,13 @@ export function LoginPage() {
             </label>
 
             <label className="field">
-              <span className="field__label">恢复密码（环境变量）</span>
+              <span className="field__label">{t('login.recover.recoveryPassword')}</span>
               <span className="field__control">
                 <KeyRound size={16} className="field__icon" />
                 <input
                   type="password"
                   autoComplete="off"
-                  placeholder="ADMIN_RECOVERY_PASSWORD 的值"
+                  placeholder={t('login.recover.passwordPlaceholder')}
                   value={recoveryPassword}
                   onChange={(event) => setRecoveryPassword(event.target.value)}
                   required
@@ -280,13 +272,13 @@ export function LoginPage() {
 
             <div className="field-row">
               <label className="field">
-                <span className="field__label">新密码</span>
+                <span className="field__label">{t('login.recover.newPassword')}</span>
                 <span className="field__control">
                   <LockKeyhole size={16} className="field__icon" />
                   <input
                     type="password"
                     autoComplete="new-password"
-                    placeholder="至少 8 位"
+                    placeholder={t('login.recover.newPasswordPlaceholder')}
                     value={newPassword}
                     onChange={(event) => setNewPassword(event.target.value)}
                     required
@@ -295,13 +287,13 @@ export function LoginPage() {
                 </span>
               </label>
               <label className="field">
-                <span className="field__label">确认新密码</span>
+                <span className="field__label">{t('login.recover.confirmPassword')}</span>
                 <span className="field__control">
                   <LockKeyhole size={16} className="field__icon" />
                   <input
                     type="password"
                     autoComplete="new-password"
-                    placeholder="再输入一次"
+                    placeholder={t('login.recover.confirmPlaceholder')}
                     value={confirmPassword}
                     onChange={(event) => setConfirmPassword(event.target.value)}
                     required
@@ -314,17 +306,14 @@ export function LoginPage() {
 
             <button type="submit" className="button button--primary button--block" disabled={busy}>
               {busy ? <Spinner /> : <KeyRound size={17} />}
-              重置密码并登录
+              {t('login.recover.submit')}
             </button>
           </form>
 
-          <p className="auth-card__recover-note">
-            恢复成功后会注销该管理员的其他登录会话。完成后请从服务器移除
-            <code>ADMIN_RECOVERY_PASSWORD</code> 并重启服务。
-          </p>
+          <p className="auth-card__recover-note">{t('login.recover.hint')}</p>
 
           <button type="button" className="auth-card__recover-back" onClick={closeRecovery}>
-            <ArrowLeft size={13} /> 返回普通登录
+            <ArrowLeft size={13} /> {t('login.recover.back')}
           </button>
         </div>
       )}

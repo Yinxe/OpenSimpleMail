@@ -38,6 +38,7 @@ import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { isDeleteConfirmSkipped, setDeleteConfirmSkipped } from '@/lib/deleteGuard'
 import { formatBytes } from '@/lib/format'
+import { useI18n } from '@/lib/i18n'
 import { type ThemeChoice, useTheme } from '@/lib/theme'
 import { useToast } from '@/lib/toast'
 
@@ -54,6 +55,7 @@ const THEME_OPTIONS: {
 
 export function SettingsPage() {
   const { user, config, preferences, logout, refreshConfig, updatePreferences } = useAuth()
+  const { locale, setLocale, t } = useI18n()
   const { theme, setTheme } = useTheme()
   const toast = useToast()
   const navigate = useNavigate()
@@ -224,8 +226,8 @@ export function SettingsPage() {
       <main className="settings__main">
         <div className="settings__intro">
           <p className="eyebrow">WORKSPACE SETTINGS</p>
-          <h1>设置</h1>
-          <p>管理邮箱连接、外观与本地账号。</p>
+          <h1>{t('settings.title')}</h1>
+          <p>{t('settings.subtitle')}</p>
         </div>
 
         <section className="settings-card settings-profile">
@@ -260,8 +262,8 @@ export function SettingsPage() {
         <section className="settings-card">
           <div className="settings-card__head">
             <div>
-              <h2>邮箱账户</h2>
-              <p>每个账户独立连接，凭据加密存储在本机 SQLite 中。</p>
+              <h2>{t('settings.accounts.title')}</h2>
+              <p>{t('settings.accounts.subtitle')}</p>
             </div>
             <button
               type="button"
@@ -493,7 +495,7 @@ export function SettingsPage() {
         <section className="settings-card">
           <div className="settings-card__head">
             <div>
-              <h2>使用偏好</h2>
+              <h2>{t('settings.preferences.title')}</h2>
               <p>这些设置保存在服务端，换设备登录也会保持一致。</p>
             </div>
             <span className="badge">
@@ -652,8 +654,8 @@ export function SettingsPage() {
         <section className="settings-card">
           <div className="settings-card__head">
             <div>
-              <h2>本次会话</h2>
-              <p>这里的开关只影响当前浏览器会话，关闭标签页后恢复默认。</p>
+              <h2>{t('settings.session.title')}</h2>
+              <p>{t('settings.session.subtitle')}</p>
             </div>
             <span className="badge">临时</span>
           </div>
@@ -683,8 +685,8 @@ export function SettingsPage() {
         <section className="settings-card">
           <div className="settings-card__head">
             <div>
-              <h2>外观</h2>
-              <p>选择界面主题，设置会保存在当前浏览器。</p>
+              <h2>{t('settings.appearance.title')}</h2>
+              <p>{t('settings.appearance.subtitle')}</p>
             </div>
           </div>
           <div className="theme-options">
@@ -707,12 +709,32 @@ export function SettingsPage() {
               )
             })}
           </div>
+
+          <div className="settings-subhead">
+            <h3>{t('settings.language.title')}</h3>
+          </div>
+          <div className="theme-options">
+            {(['zh', 'en'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`theme-option ${locale === option ? 'is-active' : ''}`}
+                onClick={() => setLocale(option)}
+              >
+                <span className="theme-option__label">{t(`settings.language.${option}`)}</span>
+                <span className="theme-option__desc">
+                  {option === 'zh' ? '简体中文' : 'English'}
+                </span>
+                {locale === option ? <Check size={15} className="theme-option__check" /> : null}
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="settings-card settings-about">
           <div className="settings-card__head">
             <div>
-              <h2>关于 OpenSimpleMail</h2>
+              <h2>{t('settings.about.title')}</h2>
               <p>一个自托管的开源多邮箱 Web 客户端。</p>
             </div>
             <span className="badge">v{config?.version ?? '0.1.0'}</span>

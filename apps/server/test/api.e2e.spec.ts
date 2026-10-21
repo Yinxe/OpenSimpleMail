@@ -597,9 +597,12 @@ describe('two-factor authentication', () => {
     })
     expect(bad.status).toBe(401)
 
+    // Reuse the same code string for the replay attempt: generating it again
+    // could land in the next 30-second step and be legitimately valid.
+    const code = totpCode(secret)
     const session = new ApiClient()
     const ok = await session.json<{ user: UserDto }>('/auth/login/totp', {
-      ...post({ challengeToken: challenge.body.challengeToken, code: totpCode(secret) }),
+      ...post({ challengeToken: challenge.body.challengeToken, code }),
     })
     expect(ok.status).toBe(200)
     expect(ok.body.user.email).toBe(email)
@@ -609,7 +612,7 @@ describe('two-factor authentication', () => {
       ...post({ email, password: 'a-strong-password' }),
     })
     const replay = await new ApiClient().json('/auth/login/totp', {
-      ...post({ challengeToken: replayChallenge.body.challengeToken, code: totpCode(secret) }),
+      ...post({ challengeToken: replayChallenge.body.challengeToken, code }),
     })
     expect(replay.status).toBe(401)
   })

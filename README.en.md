@@ -14,6 +14,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 - Administrator role with a public-registration switch; disabling it hides the sign-up UI and rejects the API server-side
 - Optional ClamAV scanning: with `CLAMAV_HOST` set, outgoing attachments are streamed to clamd before sending and infected files are blocked
 - Connection safety: mail server hosts pointing at loopback, private networks or cloud metadata are rejected when an account is saved (`ALLOW_PRIVATE_MAIL_HOSTS` / `MAIL_HOST_ALLOWLIST` opt out for self-hosted LAN servers)
+- Interface language: switch between 简体中文 and English in Settings (login and settings are covered first; the rest follows)
 - Account security: change the password (other sessions are revoked), manage sessions with browser, IP and sign-in time, enable two-factor authentication (TOTP plus one-time recovery codes) and review the sign-in audit trail
 - Per-user preferences stored server-side: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
