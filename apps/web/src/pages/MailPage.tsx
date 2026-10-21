@@ -47,22 +47,22 @@ interface UndoMoveGroup {
   uids: number[]
 }
 
-const SHORTCUTS: { keys: string[]; label: string }[] = [
-  { keys: ['c'], label: '写邮件' },
-  { keys: ['/'], label: '聚焦搜索' },
-  { keys: ['j'], label: '下一封' },
-  { keys: ['k'], label: '上一封' },
-  { keys: ['r'], label: '回复' },
-  { keys: ['a'], label: '全部回复' },
-  { keys: ['f'], label: '转发' },
-  { keys: ['s'], label: '收藏 / 取消收藏' },
-  { keys: ['u'], label: '标为已读 / 未读' },
-  { keys: ['e'], label: '归档' },
-  { keys: ['#'], label: '删除' },
-  { keys: ['x'], label: '选择当前邮件' },
-  { keys: ['g', 'i'], label: '回到收件箱' },
-  { keys: ['Esc'], label: '清空选择 / 关闭阅读区' },
-  { keys: ['?'], label: '打开 / 关闭快捷键' },
+const SHORTCUTS: { keys: string[]; labelKey: MessageKey }[] = [
+  { keys: ['c'], labelKey: 'shortcuts.compose' },
+  { keys: ['/'], labelKey: 'shortcuts.search' },
+  { keys: ['j'], labelKey: 'shortcuts.next' },
+  { keys: ['k'], labelKey: 'shortcuts.prev' },
+  { keys: ['r'], labelKey: 'shortcuts.reply' },
+  { keys: ['a'], labelKey: 'shortcuts.replyAll' },
+  { keys: ['f'], labelKey: 'shortcuts.forward' },
+  { keys: ['s'], labelKey: 'shortcuts.star' },
+  { keys: ['u'], labelKey: 'shortcuts.read' },
+  { keys: ['e'], labelKey: 'shortcuts.archive' },
+  { keys: ['#'], labelKey: 'shortcuts.delete' },
+  { keys: ['x'], labelKey: 'shortcuts.select' },
+  { keys: ['g', 'i'], labelKey: 'shortcuts.inbox' },
+  { keys: ['Esc'], labelKey: 'shortcuts.clear' },
+  { keys: ['?'], labelKey: 'shortcuts.help' },
 ]
 
 interface FlagVars {
@@ -323,7 +323,7 @@ export function MailPage() {
   const listError = unified ? (unifiedQuery.error ?? null) : (messagesQuery.error ?? null)
   const failedAccounts = unified ? (unifiedQuery.data?.failedAccounts ?? 0) : 0
   const listWarning =
-    failedAccounts > 0 ? `${failedAccounts} 个账户暂时无法读取，这个列表可能不完整` : null
+    failedAccounts > 0 ? t('mail.failedAccounts', { count: failedAccounts }) : null
 
   function retryList() {
     if (unified) {
@@ -449,7 +449,7 @@ export function MailPage() {
       queryClient.invalidateQueries({ queryKey: ['mailboxes', vars.accountId] })
     },
     onError: (error) => {
-      toast.error('操作失败', errorMessage(error))
+      toast.error(t('mail.actionFailed'), errorMessage(error))
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
     },
@@ -468,12 +468,12 @@ export function MailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
-      toast.success('已撤销')
+      toast.success(t('mail.undone'))
     },
     onError: (error) => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
-      toast.error('撤销失败', errorMessage(error))
+      toast.error(t('mail.undoFailed'), errorMessage(error))
     },
   })
 
@@ -491,7 +491,7 @@ export function MailPage() {
 
   function undoAction(groups: UndoMoveGroup[]): { label: string; onClick: () => void } | undefined {
     if (groups.length === 0) return undefined
-    return { label: '撤销', onClick: () => undoMoveMutation.mutate(groups) }
+    return { label: t('mail.undo'), onClick: () => undoMoveMutation.mutate(groups) }
   }
 
   const deleteMutation = useMutation({
@@ -542,8 +542,8 @@ export function MailPage() {
       const movedLabel = movedTo ? (movedFolder ? folderLabel(movedFolder, t) : movedTo) : null
       const undo = undoGroupsFrom(vars.accountId, vars.mailbox, result)
       toast.success(
-        '邮件已删除',
-        movedLabel ? `已移动到「${movedLabel}」` : '服务器没有废纸篓，已永久删除',
+        t('mail.deleted'),
+        movedLabel ? t('mail.movedTo', { folder: movedLabel }) : t('mail.deletedPermanently'),
         undoAction(undo),
       )
     },
@@ -551,7 +551,7 @@ export function MailPage() {
       for (const [key, data] of context?.previous ?? []) {
         queryClient.setQueryData(key, data)
       }
-      toast.error('删除失败', errorMessage(error))
+      toast.error(t('mail.deleteFailed'), errorMessage(error))
     },
   })
 
@@ -572,12 +572,12 @@ export function MailPage() {
         update({ uid: null, openAccount: null, openMailbox: null })
       }
       toast.success(
-        '邮件已归档',
+        t('mail.archived'),
         undefined,
         undoAction(undoGroupsFrom(vars.accountId, vars.mailbox, result)),
       )
     },
-    onError: (error) => toast.error('归档失败', errorMessage(error)),
+    onError: (error) => toast.error(t('mail.archiveFailed'), errorMessage(error)),
   })
 
   const markAllReadMutation = useMutation({
@@ -593,10 +593,10 @@ export function MailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
-      toast.success('已全部标为已读')
+      toast.success(t('mail.allRead'))
     },
     onError: (error) => {
-      toast.error('标记失败', errorMessage(error))
+      toast.error(t('mail.markFailed'), errorMessage(error))
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
     },
@@ -659,18 +659,18 @@ export function MailPage() {
     try {
       if (folderDialog.mode === 'create') {
         await api.post(`/accounts/${activeAccount.id}/mailboxes`, { mailbox: path })
-        toast.success('文件夹已创建', path)
+        toast.success(t('mail.folderCreated'), path)
       } else if (folderDialog.folder) {
         await api.patch(`/accounts/${activeAccount.id}/mailboxes`, {
           path: folderDialog.folder.path,
           newPath: path,
         })
-        toast.success('文件夹已重命名', path)
+        toast.success(t('mail.folderRenamed'), path)
       }
       queryClient.invalidateQueries({ queryKey: ['mailboxes', activeAccount.id] })
       setFolderDialog(null)
     } catch (error) {
-      toast.error('文件夹操作失败', errorMessage(error))
+      toast.error(t('mail.folderFailed'), errorMessage(error))
     } finally {
       setFolderBusy(false)
     }
@@ -678,7 +678,7 @@ export function MailPage() {
 
   async function deleteFolder(folder: MailboxDto) {
     if (!activeAccount) return
-    if (!window.confirm(`删除文件夹「${folderLabel(folder, t)}」及其中所有邮件？`)) return
+    if (!window.confirm(t('mail.folderDeleteConfirm', { folder: folderLabel(folder, t) }))) return
     setFolderBusy(true)
     try {
       await api.delete(
@@ -689,9 +689,9 @@ export function MailPage() {
       if (mailboxParam === folder.path) {
         update({ mailbox: DEFAULT_MAILBOX, uid: null, page: null })
       }
-      toast.success('文件夹已删除', folderLabel(folder, t))
+      toast.success(t('mail.folderDeleted'), folderLabel(folder, t))
     } catch (error) {
-      toast.error('删除文件夹失败', errorMessage(error))
+      toast.error(t('mail.folderDeleteFailed'), errorMessage(error))
     } finally {
       setFolderBusy(false)
     }
@@ -699,7 +699,7 @@ export function MailPage() {
 
   async function emptyFolder(folder: MailboxDto) {
     if (!activeAccount) return
-    if (!window.confirm(`清空「${folderLabel(folder, t)}」？此操作不可撤销。`)) return
+    if (!window.confirm(t('mail.folderEmptyConfirm', { folder: folderLabel(folder, t) }))) return
     setFolderBusy(true)
     try {
       await api.post(`/accounts/${activeAccount.id}/mailboxes/empty`, {
@@ -707,9 +707,9 @@ export function MailPage() {
       })
       queryClient.invalidateQueries({ queryKey: ['mailboxes', activeAccount.id] })
       queryClient.invalidateQueries({ queryKey: ['messages'] })
-      toast.success('文件夹已清空', folderLabel(folder, t))
+      toast.success(t('mail.folderEmptied'), folderLabel(folder, t))
     } catch (error) {
-      toast.error('清空文件夹失败', errorMessage(error))
+      toast.error(t('mail.folderEmptyFailed'), errorMessage(error))
     } finally {
       setFolderBusy(false)
     }
@@ -798,7 +798,7 @@ export function MailPage() {
     const targets = bulkTargets()
     const count = targets.reduce((sum, target) => sum + target.uids.length, 0)
     if (count === 0) return
-    if (operation === 'delete' && !window.confirm(`删除选中的 ${count} 封邮件？`)) return
+    if (operation === 'delete' && !window.confirm(t('mail.bulkDeleteConfirm', { count }))) return
 
     let affected = count
     const undoGroups: UndoMoveGroup[] = []
@@ -824,7 +824,7 @@ export function MailPage() {
           }
         }
         if (moves.length === 0) {
-          toast.error('无法归档', '当前账户没有可用的归档文件夹')
+          toast.error(t('mail.cannotArchive'), t('mail.noArchiveFolder'))
           return
         }
         affected = moves.reduce((sum, move) => sum + move.target.uids.length, 0)
@@ -878,15 +878,15 @@ export function MailPage() {
       clearSelection()
       toast.success(
         operation === 'delete'
-          ? `已删除 ${affected} 封邮件`
+          ? t('mail.bulkDeleted', { count: affected })
           : operation === 'archive'
-            ? `已归档 ${affected} 封邮件`
-            : `已更新 ${affected} 封邮件`,
+            ? t('mail.bulkArchived', { count: affected })
+            : t('mail.bulkUpdated', { count: affected }),
         undefined,
         operation === 'delete' || operation === 'archive' ? undoAction(undoGroups) : undefined,
       )
     } catch (error) {
-      toast.error('批量操作失败', errorMessage(error))
+      toast.error(t('mail.bulkFailed'), errorMessage(error))
       queryClient.invalidateQueries({ queryKey: ['messages'] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
     } finally {
@@ -925,7 +925,7 @@ export function MailPage() {
       wasStarred: item.starred,
     })
     if (item.starred && starred) {
-      toast.info('已取消收藏', '这封邮件已从收藏中移除')
+      toast.info(t('mail.unstarred'), t('mail.unstarredBody'))
     }
   }
 
@@ -1031,22 +1031,22 @@ export function MailPage() {
   const currentMailbox = activeMailboxes.find((mailbox) => mailbox.path === mailboxParam)
   const listTitle = starred
     ? unified
-      ? '全部收藏'
-      : '收藏'
+      ? t('mail.starredTitle')
+      : t('folder.starred')
     : unified
-      ? '全部收件箱'
+      ? t('settings.viewUnified')
       : currentMailbox
         ? folderLabel(currentMailbox, t)
         : mailboxParam
   const listSubtitle = starred
     ? unified
       ? accounts.length > 1
-        ? `${accounts.length} 个账户 · 稍后处理`
-        : '稍后处理'
+        ? `${t('mail.accountsCount', { count: accounts.length })} · ${t('mail.laterTitle')}`
+        : t('mail.laterTitle')
       : activeAccount?.email
     : unified
       ? accounts.length > 1
-        ? `${accounts.length} 个账户`
+        ? t('mail.accountsCount', { count: accounts.length })
         : undefined
       : activeAccount?.email
 
@@ -1248,7 +1248,7 @@ export function MailPage() {
       <button
         type="button"
         className="sidebar-backdrop"
-        aria-label="关闭导航"
+        aria-label={t('mail.closeNav')}
         onClick={() => setSidebarOpen(false)}
       />
 
@@ -1259,22 +1259,19 @@ export function MailPage() {
               <Logo compact />
             </span>
             <p className="eyebrow">GET STARTED</p>
-            <h1>先连接一个邮箱</h1>
-            <p>
-              使用 IMAP / SMTP 接入 Gmail、Outlook、QQ 邮箱或你自己的邮件服务器。
-              也可以先用演示邮箱随便逛逛。
-            </p>
+            <h1>{t('mail.onboardingTitle')}</h1>
+            <p>{t('mail.onboardingBody')}</p>
             <div className="workspace-empty__actions">
               <button
                 type="button"
                 className="button button--primary"
                 onClick={() => setAddOpen(true)}
               >
-                <Plus size={17} /> 添加邮箱账户
+                <Plus size={17} /> {t('mail.addAccount')}
               </button>
             </div>
             <p className="workspace-empty__hint">
-              <Sparkles size={14} /> 推荐为 Gmail / QQ 邮箱生成应用专用密码，而不是使用登录密码。
+              <Sparkles size={14} /> {t('mail.appPasswordHint')}
             </p>
           </div>
         </div>
@@ -1321,7 +1318,7 @@ export function MailPage() {
               const destination = archiveMailboxFor(accountId)
               const mailbox = mailboxOf(item)
               if (!destination || destination === mailbox) {
-                toast.error('无法归档', '当前账户没有可用的归档文件夹')
+                toast.error(t('mail.cannotArchive'), t('mail.noArchiveFolder'))
                 return
               }
               moveMutation.mutate({ accountId, mailbox, uid: item.uid, destination })
@@ -1344,25 +1341,25 @@ export function MailPage() {
             onRetry={retryList}
             refreshHint={
               preferences.refreshSeconds > 0
-                ? `每 ${preferences.refreshSeconds} 秒自动刷新`
-                : '自动刷新已关闭'
+                ? t('mail.autoRefresh', { seconds: preferences.refreshSeconds })
+                : t('mail.autoRefreshOff')
             }
             onMenu={() => setSidebarOpen(true)}
             emptyTitle={
               query
                 ? undefined
                 : starred
-                  ? '还没有收藏的邮件'
+                  ? t('mail.emptyStarred')
                   : unified && accounts.length > 0
-                    ? '收件箱是空的'
+                    ? t('mail.emptyInbox')
                     : undefined
             }
             emptyBody={
               query
-                ? '换一个关键词试试，或者切换到其他文件夹。'
+                ? t('mail.emptySearchHint')
                 : starred
-                  ? '在列表或阅读器里点击星标即可收藏，收藏的邮件会集中出现在这里，方便稍后处理。'
-                  : '新邮件会出现在这里。点击左上角「写邮件」开始。'
+                  ? t('mail.emptyStarredHint')
+                  : t('mail.emptyInboxHint')
             }
           />
 
@@ -1453,19 +1450,19 @@ export function MailPage() {
 
       <Modal
         open={helpOpen}
-        title="键盘快捷键"
-        subtitle="在邮件列表或阅读区使用；输入框内不生效"
+        title={t('shortcuts.title')}
+        subtitle={t('shortcuts.subtitle')}
         onClose={() => setHelpOpen(false)}
       >
         <div className="shortcut-list">
           {SHORTCUTS.map((shortcut) => (
-            <div className="shortcut-row" key={shortcut.label}>
+            <div className="shortcut-row" key={shortcut.labelKey}>
               <span className="shortcut-keys">
                 {shortcut.keys.map((key) => (
                   <kbd key={key}>{key}</kbd>
                 ))}
               </span>
-              <span className="shortcut-label">{shortcut.label}</span>
+              <span className="shortcut-label">{t(shortcut.labelKey)}</span>
             </div>
           ))}
         </div>
