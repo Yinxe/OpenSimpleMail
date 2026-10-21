@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { type RefObject, useRef, useState } from 'react'
 import { displayAddress, formatListDate } from '@/lib/format'
+import { useI18n } from '@/lib/i18n'
 import { Avatar } from './Avatar'
 
 export interface MailListItem extends MessageSummaryDto {
@@ -148,6 +149,7 @@ export function MailList({
   emptyTitle,
   emptyBody,
 }: MailListProps) {
+  const { t } = useI18n()
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const selectedOnPage = items.filter((item) => selectedRows.has(mailRowKey(item, activeAccountId)))
   const allSelected = items.length > 0 && selectedOnPage.length === items.length
@@ -169,7 +171,7 @@ export function MailList({
   return (
     <section
       className={`mail-list ${selectedOnPage.length > 0 ? 'has-selection' : ''}`}
-      aria-label="邮件列表"
+      aria-label={t('mail.list.aria')}
     >
       <header className="mail-list__head">
         {onMenu ? (
@@ -177,18 +179,18 @@ export function MailList({
             type="button"
             className="icon-button mail-list__menu"
             onClick={onMenu}
-            aria-label="打开导航"
+            aria-label={t('mail.nav.open')}
           >
             <Menu size={18} />
           </button>
         ) : null}
         {items.length > 0 ? (
-          <label className="mail-list__select-all" title="选择本页全部">
+          <label className="mail-list__select-all" title={t('mail.selectAllTitle')}>
             <input
               type="checkbox"
               checked={allSelected}
               onChange={onSelectAll}
-              aria-label="选择本页全部邮件"
+              aria-label={t('mail.selectAllAria')}
             />
           </label>
         ) : null}
@@ -196,7 +198,7 @@ export function MailList({
           <h1>{title}</h1>
           <p>
             {subtitle ? `${subtitle} · ` : ''}
-            {total > 0 ? `${total} 封` : '暂无邮件'}
+            {total > 0 ? t('mail.count', { count: total }) : t('mail.none')}
           </p>
         </div>
         {refreshHint ? <span className="mail-list__refresh-hint">{refreshHint}</span> : null}
@@ -206,22 +208,26 @@ export function MailList({
             className="button button--soft button--sm mail-list__mark-read"
             onClick={onMarkAllRead}
             disabled={markingAllRead || unreadCount === 0}
-            title="将当前文件夹的全部邮件标为已读"
+            title={t('mail.markAllReadTitle')}
           >
             {markingAllRead ? (
               <Loader2 size={14} className="is-spinning" />
             ) : (
               <MailCheck size={14} />
             )}
-            <span>{unreadCount > 0 ? `全部已读 ${unreadCount}` : '全部已读'}</span>
+            <span>
+              {unreadCount > 0
+                ? t('mail.markAllReadCount', { count: unreadCount })
+                : t('mail.markAllRead')}
+            </span>
           </button>
         ) : null}
         <button
           type="button"
           className="icon-button"
           onClick={onShowHelp}
-          title="键盘快捷键（?）"
-          aria-label="键盘快捷键"
+          title={t('mail.shortcutsTitle')}
+          aria-label={t('mail.shortcutsAria')}
         >
           <Keyboard size={16} />
         </button>
@@ -229,8 +235,10 @@ export function MailList({
           type="button"
           className="icon-button"
           onClick={onRefresh}
-          title={refreshHint ? `刷新（${refreshHint}）` : '刷新'}
-          aria-label="刷新"
+          title={
+            refreshHint ? t('mail.refreshTitle', { hint: refreshHint }) : t('mail.refreshAria')
+          }
+          aria-label={t('mail.refreshAria')}
           disabled={refreshing}
         >
           <RefreshCw size={16} className={refreshing ? 'is-spinning' : undefined} />
@@ -243,16 +251,16 @@ export function MailList({
           ref={searchRef}
           type="search"
           value={search}
-          placeholder={unified ? '搜索所有账户的收件箱…' : '搜索当前文件夹…'}
+          placeholder={unified ? t('mail.searchAll') : t('mail.searchFolder')}
           onChange={(event) => onSearchChange(event.target.value)}
-          aria-label="搜索邮件"
+          aria-label={t('mail.searchAria')}
         />
         {search ? (
           <button
             type="button"
             className="mail-list__search-clear"
             onClick={() => onSearchChange('')}
-            aria-label="清除搜索"
+            aria-label={t('mail.searchClear')}
           >
             <X size={14} />
           </button>
@@ -262,17 +270,19 @@ export function MailList({
       </div>
 
       {selectedOnPage.length > 0 ? (
-        <div className="bulk-bar" role="toolbar" aria-label="批量操作">
-          <span className="bulk-bar__count">已选 {selectedOnPage.length} 封</span>
+        <div className="bulk-bar" role="toolbar" aria-label={t('mail.bulkAria')}>
+          <span className="bulk-bar__count">
+            {t('mail.bulkSelected', { count: selectedOnPage.length })}
+          </span>
           <button type="button" onClick={() => onBulkRead(true)} disabled={bulkBusy}>
-            标为已读
+            {t('mail.row.markRead')}
           </button>
           <button type="button" onClick={() => onBulkRead(false)} disabled={bulkBusy}>
-            标为未读
+            {t('mail.row.markUnread')}
           </button>
           {canBulkArchive ? (
             <button type="button" onClick={onBulkArchive} disabled={bulkBusy}>
-              归档
+              {t('mail.row.archive')}
             </button>
           ) : null}
           <button
@@ -281,7 +291,7 @@ export function MailList({
             onClick={onBulkDelete}
             disabled={bulkBusy}
           >
-            删除
+            {t('mail.row.delete')}
           </button>
           <button
             type="button"
@@ -289,7 +299,7 @@ export function MailList({
             onClick={onClearSelection}
             disabled={bulkBusy}
           >
-            取消
+            {t('mail.bulkClear')}
           </button>
           {bulkBusy ? <Loader2 size={14} className="is-spinning" /> : null}
         </div>
@@ -331,7 +341,7 @@ export function MailList({
       >
         {pullDistance > 0 ? (
           <div className="mail-list__pull" style={{ height: pullDistance }}>
-            {pullDistance >= 50 ? '松开刷新' : '下拉刷新'}
+            {pullDistance >= 50 ? t('mail.pullRelease') : t('mail.pullHint')}
           </div>
         ) : null}
         {loading ? <SkeletonRows /> : null}
@@ -346,7 +356,7 @@ export function MailList({
         {!loading && error && items.length > 0 ? (
           <div className="mail-list__error-banner" role="alert">
             <AlertTriangle size={14} />
-            <span>刷新失败：{error}</span>
+            <span>{t('mail.refreshFailed', { error })}</span>
             <button type="button" onClick={onRetry}>
               重试
             </button>
@@ -358,7 +368,7 @@ export function MailList({
             <span className="empty-state__icon">
               <AlertTriangle size={26} />
             </span>
-            <h3>无法加载邮件</h3>
+            <h3>{t('mail.error.title')}</h3>
             <p>{error}</p>
             <button
               type="button"
@@ -375,8 +385,8 @@ export function MailList({
             <span className="empty-state__icon">
               <Inbox size={26} />
             </span>
-            <h3>{emptyTitle ?? (search ? '没有找到匹配的邮件' : '这里还没有邮件')}</h3>
-            <p>{emptyBody ?? (search ? '换一个关键词试试。' : '新邮件会出现在这里。')}</p>
+            <h3>{emptyTitle ?? (search ? t('mail.emptySearchTitle') : t('mail.empty.title'))}</h3>
+            <p>{emptyBody ?? (search ? t('mail.emptySearchBody') : t('mail.emptyNewBody'))}</p>
           </div>
         ) : null}
 
@@ -470,11 +480,11 @@ export function MailList({
                     >
                       {swiping < 0
                         ? canArchive
-                          ? '归档'
-                          : '删除'
+                          ? t('mail.row.archive')
+                          : t('mail.row.delete')
                         : item.starred
-                          ? '取消收藏'
-                          : '收藏'}
+                          ? t('mail.row.unstar')
+                          : t('mail.row.star')}
                     </span>
                   ) : null}
                   <span className="mail-row__check">
@@ -486,12 +496,12 @@ export function MailList({
                         event.stopPropagation()
                         onToggleSelect(item, event.shiftKey)
                       }}
-                      aria-label={checked ? '取消选择这封邮件' : '选择这封邮件'}
+                      aria-label={checked ? t('mail.row.deselect') : t('mail.row.select')}
                     />
                   </span>
                   <span
                     className={`mail-row__status ${item.unread ? 'is-unread' : 'is-read'}`}
-                    title={item.unread ? '未读' : '已读'}
+                    title={item.unread ? t('mail.row.unread') : t('mail.row.read')}
                   >
                     {item.unread ? <span className="mail-row__dot" /> : <Check size={12} />}
                   </span>
@@ -503,12 +513,12 @@ export function MailList({
                   <div className="mail-row__main">
                     <div className="mail-row__top">
                       <span className="mail-row__sender">
-                        {sender ? displayAddress(sender) : '未知发件人'}
+                        {sender ? displayAddress(sender) : t('mail.row.unknownSender')}
                       </span>
                       <span className="mail-row__date">{formatListDate(item.date)}</span>
                     </div>
                     <div className="mail-row__subject">
-                      {item.subject.trim() || '(无主题)'}
+                      {item.subject.trim() || t('mail.row.noSubject')}
                       {item.starred ? (
                         <Star size={12} className="mail-row__starred" fill="currentColor" />
                       ) : null}
@@ -525,7 +535,7 @@ export function MailList({
                       ) : null}
                       {item.hasAttachments ? (
                         <span className="mail-row__attach">
-                          <Paperclip size={12} /> 附件
+                          <Paperclip size={12} /> {t('mail.row.attachment')}
                         </span>
                       ) : null}
                     </div>
@@ -534,8 +544,8 @@ export function MailList({
                     <button
                       type="button"
                       className="row-action"
-                      title={item.unread ? '标为已读' : '标为未读'}
-                      aria-label={item.unread ? '标为已读' : '标为未读'}
+                      title={item.unread ? t('mail.row.markRead') : t('mail.row.markUnread')}
+                      aria-label={item.unread ? t('mail.row.markRead') : t('mail.row.markUnread')}
                       onClick={(event) => {
                         event.stopPropagation()
                         onToggleRead(item)
@@ -546,8 +556,8 @@ export function MailList({
                     <button
                       type="button"
                       className={`row-action ${item.starred ? 'is-on' : ''}`}
-                      title={item.starred ? '取消收藏' : '收藏（可在左侧「收藏」查看）'}
-                      aria-label={item.starred ? '取消收藏' : '收藏'}
+                      title={item.starred ? t('mail.row.unstar') : t('mail.row.starHint')}
+                      aria-label={item.starred ? t('mail.row.unstar') : t('mail.row.star')}
                       aria-pressed={item.starred}
                       onClick={(event) => {
                         event.stopPropagation()
@@ -559,8 +569,8 @@ export function MailList({
                     <button
                       type="button"
                       className="row-action row-action--danger"
-                      title="删除邮件"
-                      aria-label="删除邮件"
+                      title={t('mail.row.deleteAria')}
+                      aria-label={t('mail.row.deleteAria')}
                       onClick={(event) => {
                         event.stopPropagation()
                         onDelete(item)
