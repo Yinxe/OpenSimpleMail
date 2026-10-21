@@ -44,6 +44,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- The unified inbox caches each account's list page for 20 seconds and fetches accounts in parallel, so paging to page N reuses the pages fetched for page N-1 instead of re-running every earlier IMAP fetch; flag, move, delete, send and folder changes invalidate the affected account's cache.
 - The sidebar groups mailboxes into a tree using each account's IMAP delimiter: parent folders expand and collapse, and intermediate levels without a real mailbox render as plain group labels.
 - Attachment upload progress in the composer: sending with attachments goes through XHR so the footer can show "正在上传附件 N%" before switching to the sending state.
 - "Do not ask again" in the delete dialog now applies to the account being cleaned up instead of every mailbox; the Settings switch stays a global default.

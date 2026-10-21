@@ -80,6 +80,16 @@ function parseAddressList(value: string | undefined): ParsedAddress[] {
 
 @Injectable()
 export class MailService {
+  /**
+   * Short-lived cache of one account's list page, keyed by mailbox/query/size.
+   * Paging the unified inbox walks pages 1..N per account, so without this a
+   * deep page re-runs every earlier IMAP fetch; with it, page N reuses the
+   * pages fetched for page N-1.
+   */
+  private readonly unifiedPages = new Map<string, { at: number; data: MessagePageDto }>()
+  private static readonly UNIFIED_TTL_MS = 20_000
+  private static readonly UNIFIED_MAX_ENTRIES = 400
+
   private readonly logger = new Logger(MailService.name)
 
   constructor(
@@ -128,20 +138,17 @@ export class MailService {
     let total = 0
     let failed = 0
 
-    for (const account of accounts) {
-      try {
+    // Accounts are independent IMAP connections, so fetch them in parallel;
+    // each one still walks its own pages in order.
+    const results = await Promise.allSettled(
+      accounts.map(async (account) => {
         const provider = await this.provider(userId, account.id)
-        // To fill one global page we need the first `page * pageSize` messages
-        // from every account, so fetch each account's pages 1..page.
+        const collected: UnifiedMessageDto[] = []
+        let accountTotal = 0
         for (let current = 1; current <= options.page; current += 1) {
-          const pageData = await provider.listMessages({
-            mailbox: options.mailbox,
-            page: current,
-            pageSize: options.pageSize,
-            query: options.query,
-          })
-          if (current === 1) total += pageData.total
-          messages.push(
+          const pageData = await this.cachedPage(provider, account.id, options, current)
+          if (current === 1) accountTotal = pageData.total
+          collected.push(
             ...pageData.messages.map((message) => ({
               ...message,
               accountId: account.id,
@@ -151,12 +158,21 @@ export class MailService {
           )
           if (pageData.messages.length < options.pageSize) break
         }
-      } catch (error) {
-        failed += 1
-        const detail = error instanceof Error ? error.message : String(error)
-        this.logger.warn(`Unified inbox skipped ${account.email}: ${detail}`)
+        return { account, messages: collected, total: accountTotal }
+      }),
+    )
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        messages.push(...result.value.messages)
+        total += result.value.total
+        return
       }
-    }
+      failed += 1
+      const account = accounts[index]
+      const detail = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      this.logger.warn(`Unified inbox skipped ${account?.email ?? 'account'}: ${detail}`)
+    })
 
     if (accounts.length > 0 && failed === accounts.length) {
       throw new BadGatewayException('无法读取统一收件箱：所有账户均连接失败')
@@ -170,6 +186,42 @@ export class MailService {
       page: options.page,
       pageSize: options.pageSize,
       ...(failed > 0 ? { failedAccounts: failed } : {}),
+    }
+  }
+
+  private cachedPage(
+    provider: MailProvider,
+    accountId: string,
+    options: { mailbox: string; pageSize: number; query?: string },
+    page: number,
+  ): Promise<MessagePageDto> {
+    const key = `${accountId}|${options.mailbox}|${options.query ?? ''}|${options.pageSize}|${page}`
+    const hit = this.unifiedPages.get(key)
+    if (hit && Date.now() - hit.at < MailService.UNIFIED_TTL_MS) return Promise.resolve(hit.data)
+
+    return provider
+      .listMessages({
+        mailbox: options.mailbox,
+        page,
+        pageSize: options.pageSize,
+        query: options.query,
+      })
+      .then((data) => {
+        if (this.unifiedPages.size >= MailService.UNIFIED_MAX_ENTRIES) this.unifiedPages.clear()
+        this.unifiedPages.set(key, { at: Date.now(), data })
+        return data
+      })
+  }
+
+  /** Drop cached list pages after anything that changes flags, folders or mail. */
+  private dropUnifiedPages(accountId?: string): void {
+    if (!accountId) {
+      this.unifiedPages.clear()
+      return
+    }
+    const prefix = `${accountId}|`
+    for (const key of [...this.unifiedPages.keys()]) {
+      if (key.startsWith(prefix)) this.unifiedPages.delete(key)
     }
   }
 
@@ -207,6 +259,7 @@ export class MailService {
   ): Promise<void> {
     const provider = await this.provider(userId, accountId)
     await this.run(() => provider.setFlags(mailbox, uid, flags), '无法更新邮件状态')
+    this.dropUnifiedPages(accountId)
   }
 
   async setFlagsMany(
@@ -218,11 +271,13 @@ export class MailService {
   ): Promise<void> {
     const provider = await this.provider(userId, accountId)
     await this.run(() => provider.setFlagsMany(mailbox, uids, flags), '无法批量更新邮件状态')
+    this.dropUnifiedPages(accountId)
   }
 
   async markMailboxRead(userId: string, accountId: string, mailbox: string): Promise<void> {
     const provider = await this.provider(userId, accountId)
     await this.run(() => provider.markMailboxRead(mailbox), '无法将邮件标为已读')
+    this.dropUnifiedPages(accountId)
   }
 
   async move(
@@ -233,7 +288,9 @@ export class MailService {
     destination: string,
   ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
-    return this.run(() => provider.move(mailbox, uid, destination), '无法移动邮件')
+    const outcome = await this.run(() => provider.move(mailbox, uid, destination), '无法移动邮件')
+    this.dropUnifiedPages(accountId)
+    return outcome
   }
 
   async moveMany(
@@ -244,7 +301,12 @@ export class MailService {
     destination: string,
   ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
-    return this.run(() => provider.moveMany(mailbox, uids, destination), '无法批量移动邮件')
+    const outcome = await this.run(
+      () => provider.moveMany(mailbox, uids, destination),
+      '无法批量移动邮件',
+    )
+    this.dropUnifiedPages(accountId)
+    return outcome
   }
 
   async remove(
@@ -254,7 +316,9 @@ export class MailService {
     uid: number,
   ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
-    return this.run(() => provider.delete(mailbox, uid), '无法删除邮件')
+    const outcome = await this.run(() => provider.delete(mailbox, uid), '无法删除邮件')
+    this.dropUnifiedPages(accountId)
+    return outcome
   }
 
   async removeMany(
@@ -264,7 +328,9 @@ export class MailService {
     uids: number[],
   ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
-    return this.run(() => provider.deleteMany(mailbox, uids), '无法批量删除邮件')
+    const outcome = await this.run(() => provider.deleteMany(mailbox, uids), '无法批量删除邮件')
+    this.dropUnifiedPages(accountId)
+    return outcome
   }
 
   async saveDraft(
@@ -290,6 +356,7 @@ export class MailService {
     this.assertFolderPath(path)
     const provider = await this.provider(userId, accountId)
     await this.run(() => provider.createMailbox(path.trim()), '无法创建文件夹')
+    this.dropUnifiedPages(accountId)
   }
 
   async renameMailbox(
@@ -302,18 +369,21 @@ export class MailService {
     this.assertFolderPath(newPath)
     const provider = await this.provider(userId, accountId)
     await this.run(() => provider.renameMailbox(path.trim(), newPath.trim()), '无法重命名文件夹')
+    this.dropUnifiedPages(accountId)
   }
 
   async deleteMailbox(userId: string, accountId: string, path: string): Promise<void> {
     this.assertFolderPath(path)
     const provider = await this.provider(userId, accountId)
     await this.run(() => provider.deleteMailbox(path.trim()), '无法删除文件夹')
+    this.dropUnifiedPages(accountId)
   }
 
   async emptyMailbox(userId: string, accountId: string, path: string): Promise<void> {
     this.assertFolderPath(path)
     const provider = await this.provider(userId, accountId)
     await this.run(() => provider.emptyMailbox(path.trim()), '无法清空文件夹')
+    this.dropUnifiedPages(accountId)
   }
 
   private assertFolderPath(path: string): void {
@@ -380,6 +450,7 @@ export class MailService {
 
     const provider = await this.provider(userId, accountId)
     const result = await this.run(() => provider.send(message), '邮件发送失败')
+    this.dropUnifiedPages(accountId)
     this.contacts.record(userId, [
       ...parseAddressList(input.to),
       ...parseAddressList(input.cc),
