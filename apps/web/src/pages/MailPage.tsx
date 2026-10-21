@@ -5,6 +5,7 @@ import {
   type MessagePageDto,
   type MessageSummaryDto,
   STARRED_MAILBOX,
+  type UnifiedMessagePageDto,
 } from '@osm/shared'
 import {
   keepPreviousData,
@@ -277,61 +278,32 @@ export function MailPage() {
   })
 
   const unifiedMailbox = starred ? STARRED_MAILBOX : DEFAULT_MAILBOX
-  const unifiedQueries = useQueries({
-    queries: accounts.map((account) => ({
-      queryKey: ['messages', account.id, unifiedMailbox, 1, preferences.pageSize, query],
-      queryFn: () =>
-        api.get<MessagePageDto>(
-          `/accounts/${account.id}/messages?mailbox=${encodeURIComponent(
-            unifiedMailbox,
-          )}&page=1&pageSize=${preferences.pageSize}${
-            query ? `&q=${encodeURIComponent(query)}` : ''
-          }`,
-        ),
-      enabled: unified,
-      staleTime: 15_000,
-      refetchInterval: unified ? refreshMs : false,
-    })),
+  const unifiedQuery = useQuery({
+    queryKey: ['messages', 'unified', unifiedMailbox, page, preferences.pageSize, query],
+    queryFn: () =>
+      api.get<UnifiedMessagePageDto>(
+        `/messages/unified?mailbox=${encodeURIComponent(unifiedMailbox)}&page=${page}&pageSize=${
+          preferences.pageSize
+        }${query ? `&q=${encodeURIComponent(query)}` : ''}`,
+      ),
+    enabled: unified,
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+    refetchInterval: refreshMs,
   })
 
-  const unifiedItems: MailListItem[] = useMemo(() => {
-    if (!unified) return []
-    const items: MailListItem[] = []
-    accounts.forEach((account, index) => {
-      const data = unifiedQueries[index]?.data
-      if (!data) return
-      for (const message of data.messages) {
-        items.push({
-          ...message,
-          accountId: account.id,
-          accountName: account.name,
-          accountColor: account.color,
-        })
-      }
-    })
-    return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  }, [accounts, unified, unifiedQueries])
+  const items: MailListItem[] = unified
+    ? (unifiedQuery.data?.messages ?? [])
+    : (messagesQuery.data?.messages ?? [])
+  const listLoading = unified ? unifiedQuery.isLoading : messagesQuery.isLoading
+  const listFetching = unified ? unifiedQuery.isFetching : messagesQuery.isFetching
+  const total = unified ? (unifiedQuery.data?.total ?? 0) : (messagesQuery.data?.total ?? 0)
 
-  const items: MailListItem[] = unified ? unifiedItems : (messagesQuery.data?.messages ?? [])
-  const listLoading = unified
-    ? unifiedQueries.some((result) => result.isLoading)
-    : messagesQuery.isLoading
-  const listFetching = unified
-    ? unifiedQueries.some((result) => result.isFetching)
-    : messagesQuery.isFetching
-  const total = unified
-    ? unifiedQueries.reduce((sum, result) => sum + (result.data?.total ?? 0), 0)
-    : (messagesQuery.data?.total ?? 0)
-
-  const listError = unified
-    ? (unifiedQueries.find((result) => result.isError)?.error ?? null)
-    : (messagesQuery.error ?? null)
+  const listError = unified ? (unifiedQuery.error ?? null) : (messagesQuery.error ?? null)
 
   function retryList() {
     if (unified) {
-      for (const result of unifiedQueries) {
-        if (result.isError) void result.refetch()
-      }
+      void unifiedQuery.refetch()
       return
     }
     void messagesQuery.refetch()

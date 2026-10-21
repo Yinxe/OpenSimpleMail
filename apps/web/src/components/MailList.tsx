@@ -565,7 +565,7 @@ export function MailList({
           : null}
       </div>
 
-      {!unified && total > pageSize ? (
+      {total > pageSize ? (
         <footer className="mail-list__foot">
           <span>
             第 {page} / {pages} 页

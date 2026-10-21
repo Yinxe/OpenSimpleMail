@@ -4,6 +4,12 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ## [Unreleased]
 
+### Changed
+
+- Stream attachments through disk instead of the heap: outgoing uploads are written to `data/attachments/upload/` and read back by the MIME composer, while incoming messages are parsed from the IMAP stream with each attachment extracted to `data/attachments/cache/`. A 25 MB send or a 40 MB message no longer holds tens of megabytes in memory.
+- Replace the in-memory parsed-message cache with one that keeps only the text body and attachment metadata, backed by a disk cache bounded by `ATTACHMENT_CACHE_MB` (default 256 MB), evicted least-recently-used and swept on startup.
+- Report the real attachment size in the reader (it used to be missing for IMAP accounts), and inline `cid:` images from the disk cache under a 12 MB total budget.
+
 ### Fixed
 
 - Keep a strong active style on the opened message row, including in the starred view, by matching the message's real folder and using an accent bar instead of a subtle tint.
@@ -20,6 +26,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Unified inbox pagination: `/api/messages/unified` merges each account's INBOX (or starred view) page by page, returns a true total and makes the pager work in the unified view.
 - Touch gestures on the message list: swipe left to archive (or delete when no archive folder exists), swipe right to toggle the star, and pull down at the top to refresh.
 - Expanded keyboard shortcuts (forward, star, read/unread, archive, delete, select, `g i`) and a `?` help overlay, also reachable from a keyboard button in the list header.
 - Unread badges: title count and dynamic favicon; optional desktop notifications for new mail while the tab is in the background, with a Settings toggle and permission request.

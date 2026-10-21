@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import {
   type MailboxDto,
   type MessageDetailDto,
@@ -149,10 +150,14 @@ export class DemoProvider implements MailProvider {
     const message = this.find(uid)
     const attachment = message.attachments[index]
     if (!attachment) throw new Error('附件不存在')
+    // The demo workspace keeps its mail in JSON, so there is no file to stream.
+    const content = Buffer.from(attachment.content, 'base64')
     return {
       filename: attachment.filename,
       contentType: attachment.contentType,
-      content: Buffer.from(attachment.content, 'base64'),
+      size: content.byteLength,
+      path: null,
+      content,
     }
   }
 
@@ -243,6 +248,14 @@ export class DemoProvider implements MailProvider {
     const uid = store.nextUid++
     const now = new Date().toISOString()
     const messageId = `<${randomUUID()}@opensimplemail.local>`
+    // Uploads live on disk now, so read them once to seed the demo store.
+    const attachments = await Promise.all(
+      message.attachments.map(async (item) => ({
+        filename: item.filename,
+        contentType: item.contentType,
+        content: (await readFile(item.path)).toString('base64'),
+      })),
+    )
     const sent: DemoMessage = {
       uid,
       mailbox: 'Sent',
@@ -256,11 +269,7 @@ export class DemoProvider implements MailProvider {
       flags: ['\\Seen'],
       text: message.text ?? '',
       html: message.html ?? null,
-      attachments: message.attachments.map((item) => ({
-        filename: item.filename,
-        contentType: item.contentType,
-        content: item.content.toString('base64'),
-      })),
+      attachments,
       messageId,
       inReplyTo: message.inReplyTo ?? null,
       references: message.references ?? [],

@@ -33,9 +33,11 @@ export class SmtpService {
         html: message.html || undefined,
         inReplyTo: message.inReplyTo || undefined,
         references: message.references?.length ? message.references : undefined,
+        // `path` makes nodemailer stream each file while it composes the
+        // message, so the uploads are never copied into the heap.
         attachments: message.attachments.map((attachment) => ({
           filename: attachment.filename,
-          content: attachment.content,
+          path: attachment.path,
           contentType: attachment.contentType,
         })),
       })

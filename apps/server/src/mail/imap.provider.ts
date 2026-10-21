@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { Logger, NotFoundException, PayloadTooLargeException } from '@nestjs/common'
 import {
   type AddressDto,
@@ -10,7 +11,8 @@ import {
   type TestResultDto,
 } from '@osm/shared'
 import type { FetchMessageObject, ImapFlow, MessageStructureObject } from 'imapflow'
-import { type AddressObject, type ParsedMail, simpleParser } from 'mailparser'
+import type { AddressObject } from 'mailparser'
+import type { AttachmentStorage } from './attachment-storage'
 import type { ImapPool } from './imap.pool'
 import type {
   AttachmentPayload,
@@ -21,79 +23,19 @@ import type {
   MailProvider,
   OutgoingMessage,
 } from './mail.types'
+import {
+  MessageTooLargeError,
+  type ParsedMessage,
+  parseMessage as parseMessageStream,
+} from './message-parser'
 import { sanitizeEmailHtml } from './message-sanitizer'
+import { type ParsedMessageCache, parsedCacheKey } from './parsed-cache'
 import type { SmtpService } from './smtp.service'
 
 const MAX_MESSAGE_BYTES = 40 * 1024 * 1024
-const INLINE_IMAGE_LIMIT = 1024 * 1024
-
-// Parsing a message is the expensive part of opening it or downloading one of
-// its attachments. Keep a small LRU so clicking three attachments on the same
-// message does not download and parse the whole source three times.
-const PARSED_CACHE_TTL_MS = 10 * 60 * 1000
-const PARSED_CACHE_MAX_BYTES = 24 * 1024 * 1024
-const PARSED_CACHE_MAX_ENTRIES = 12
-const PARSED_CACHE_MAX_MESSAGE_BYTES = 8 * 1024 * 1024
-
-interface ParsedCacheEntry {
-  parsed: ParsedMail
-  bytes: number
-  storedAt: number
-}
-
-const parsedCache = new Map<string, ParsedCacheEntry>()
-let parsedCacheBytes = 0
-
-function parsedCacheKey(accountId: string, mailbox: string, uid: number): string {
-  return `${accountId}\u0000${mailbox}\u0000${uid}`
-}
-
-function dropParsedCache(key: string): void {
-  const entry = parsedCache.get(key)
-  if (!entry) return
-  parsedCache.delete(key)
-  parsedCacheBytes = Math.max(0, parsedCacheBytes - entry.bytes)
-}
-
-function readParsedCache(key: string): ParsedMail | null {
-  const entry = parsedCache.get(key)
-  if (!entry) return null
-  if (Date.now() - entry.storedAt > PARSED_CACHE_TTL_MS) {
-    dropParsedCache(key)
-    return null
-  }
-  // Re-insert to refresh the LRU order.
-  parsedCache.delete(key)
-  parsedCache.set(key, entry)
-  return entry.parsed
-}
-
-function writeParsedCache(key: string, parsed: ParsedMail, sourceBytes: number): void {
-  if (sourceBytes > PARSED_CACHE_MAX_MESSAGE_BYTES) return
-  // Parsed attachments keep their own buffers, so count roughly twice the source.
-  const bytes = sourceBytes * 2
-  if (bytes > PARSED_CACHE_MAX_BYTES) return
-
-  dropParsedCache(key)
-  while (
-    parsedCache.size >= PARSED_CACHE_MAX_ENTRIES ||
-    parsedCacheBytes + bytes > PARSED_CACHE_MAX_BYTES
-  ) {
-    const oldest = parsedCache.keys().next().value as string | undefined
-    if (!oldest) break
-    dropParsedCache(oldest)
-  }
-  parsedCache.set(key, { parsed, bytes, storedAt: Date.now() })
-  parsedCacheBytes += bytes
-}
-
-async function parseMessage(key: string, source: Buffer): Promise<ParsedMail> {
-  const cached = readParsedCache(key)
-  if (cached) return cached
-  const parsed = await simpleParser(source)
-  writeParsedCache(key, parsed, source.byteLength)
-  return parsed
-}
+// Inline images are embedded into the HTML as data URLs, so they do land in
+// memory. Cap the total instead of letting a photo-heavy newsletter balloon.
+const INLINE_IMAGE_TOTAL_LIMIT = 12 * 1024 * 1024
 
 // Folder counts are only a sidebar hint and change slowly. Cache them briefly
 // so polling and several mounted components do not re-run a STATUS per folder.
@@ -258,6 +200,8 @@ export class ImapProvider implements MailProvider {
     private readonly pool: ImapPool,
     private readonly smtp: SmtpService,
     private readonly creds: MailCredentials,
+    private readonly storage: AttachmentStorage,
+    private readonly cache: ParsedMessageCache,
   ) {}
 
   async listMailboxes(): Promise<MailboxDto[]> {
@@ -438,19 +382,18 @@ export class ImapProvider implements MailProvider {
 
   async getMessage(mailbox: string, uid: number): Promise<MessageDetailDto> {
     const cacheKey = parsedCacheKey(this.creds.accountId, mailbox, uid)
+    const cached = this.cache.get(cacheKey)
     return this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
       try {
-        // When the parsed body is cached, only metadata is fetched: reopening a
-        // large message or downloading its attachments no longer pulls the source again.
-        const cached = readParsedCache(cacheKey)
+        // The body comes from the cache when it is warm: only the envelope,
+        // flags and size are fetched, never the source again.
         const message = await client.fetchOne(
           uid,
           {
             envelope: true,
             flags: true,
             uid: true,
-            ...(cached ? {} : { source: true }),
             internalDate: true,
             bodyStructure: true,
             size: true,
@@ -462,12 +405,8 @@ export class ImapProvider implements MailProvider {
           throw new PayloadTooLargeException('邮件超过 40 MB，暂不支持在线查看')
         }
 
-        let parsed = cached
-        if (!parsed) {
-          if (!message.source) throw new NotFoundException('邮件不存在或已被删除')
-          parsed = await parseMessage(cacheKey, message.source)
-        }
-        return this.buildDetail(message, parsed, mailbox)
+        const parsed = cached ?? (await this.parseFromServer(client, mailbox, uid))
+        return await this.buildDetail(message, parsed, mailbox)
       } finally {
         lock.release()
       }
@@ -476,16 +415,13 @@ export class ImapProvider implements MailProvider {
 
   async getAttachment(mailbox: string, uid: number, index: number): Promise<AttachmentPayload> {
     const cacheKey = parsedCacheKey(this.creds.accountId, mailbox, uid)
-    const cached = readParsedCache(cacheKey)
+    const cached = this.cache.get(cacheKey)
     if (cached) return this.attachmentPayload(cached, index)
 
     return this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
       try {
-        const message = await client.fetchOne(uid, { source: true, size: true }, { uid: true })
-        // biome-ignore lint/complexity/useOptionalChain: optional chaining would not narrow the `false` branch of fetchOne
-        if (!message || !message.source) throw new NotFoundException('邮件不存在或已被删除')
-        const parsed = await parseMessage(cacheKey, message.source)
+        const parsed = await this.parseFromServer(client, mailbox, uid)
         return this.attachmentPayload(parsed, index)
       } finally {
         lock.release()
@@ -493,13 +429,48 @@ export class ImapProvider implements MailProvider {
     })
   }
 
-  private attachmentPayload(parsed: ParsedMail, index: number): AttachmentPayload {
+  /**
+   * Streams the raw message from the server and extracts every attachment to
+   * disk. Nothing larger than a chunk of the MIME stream is held in memory.
+   */
+  private async parseFromServer(
+    client: ImapFlow,
+    mailbox: string,
+    uid: number,
+  ): Promise<ParsedMessage> {
+    const cacheKey = parsedCacheKey(this.creds.accountId, mailbox, uid)
+    return this.cache.load(cacheKey, async () => {
+      await this.storage.prepare()
+      const directory = this.storage.cacheDir(this.creds.accountId, mailbox, uid)
+      const download = await client.download(uid, undefined, { uid: true })
+      if (!download.content) throw new NotFoundException('邮件不存在或已被删除')
+
+      try {
+        const parsed = await parseMessageStream(download.content, {
+          dir: directory,
+          maxBytes: MAX_MESSAGE_BYTES,
+        })
+        this.cache.set(cacheKey, parsed)
+        return parsed
+      } catch (error) {
+        await this.storage.remove(directory)
+        if (error instanceof MessageTooLargeError) {
+          throw new PayloadTooLargeException('邮件超过 40 MB，暂不支持在线查看')
+        }
+        throw error
+      }
+    })
+  }
+
+  private attachmentPayload(parsed: ParsedMessage, index: number): AttachmentPayload {
     const attachment = parsed.attachments[index]
     if (!attachment) throw new NotFoundException('附件不存在')
     return {
       filename: attachment.filename ?? `attachment-${index + 1}`,
       contentType: attachment.contentType || 'application/octet-stream',
-      content: attachment.content,
+      size: attachment.size,
+      path: attachment.path,
+      content: null,
     }
   }
 
@@ -563,7 +534,7 @@ export class ImapProvider implements MailProvider {
         lock.release()
       }
     })
-    dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    this.cache.drop(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
   }
@@ -578,7 +549,7 @@ export class ImapProvider implements MailProvider {
         lock.release()
       }
     })
-    for (const uid of uids) dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    for (const uid of uids) this.cache.drop(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
   }
@@ -603,7 +574,7 @@ export class ImapProvider implements MailProvider {
         lock.release()
       }
     })
-    dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    this.cache.drop(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
     return result
@@ -630,7 +601,7 @@ export class ImapProvider implements MailProvider {
         lock.release()
       }
     })
-    for (const uid of uids) dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    for (const uid of uids) this.cache.drop(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
     return result
@@ -685,22 +656,13 @@ export class ImapProvider implements MailProvider {
     return result
   }
 
-  private buildDetail(
+  private async buildDetail(
     message: FetchMessageObject,
-    parsed: ParsedMail,
+    parsed: ParsedMessage,
     mailbox: string,
-  ): MessageDetailDto {
+  ): Promise<MessageDetailDto> {
     const summary = toSummary(message)
-    const inlineImages = new Map<string, string>()
-    for (const attachment of parsed.attachments) {
-      if (!attachment.cid || !attachment.contentType.startsWith('image/')) continue
-      if (attachment.content.byteLength > INLINE_IMAGE_LIMIT) continue
-      const cid = attachment.cid.replace(/^<|>$/g, '')
-      inlineImages.set(
-        cid,
-        `data:${attachment.contentType};base64,${attachment.content.toString('base64')}`,
-      )
-    }
+    const inlineImages = await this.inlineImages(parsed)
 
     return {
       ...summary,
@@ -725,5 +687,29 @@ export class ImapProvider implements MailProvider {
       inReplyTo: parsed.inReplyTo ?? null,
       references: referencesOf(parsed.references),
     }
+  }
+
+  /**
+   * `cid:` links only render when the bytes are inlined as data URLs. Read them
+   * back from disk, bounded by a total budget so a photo-heavy newsletter does
+   * not pull tens of megabytes into the response.
+   */
+  private async inlineImages(parsed: ParsedMessage): Promise<Map<string, string>> {
+    const images = new Map<string, string>()
+    let total = 0
+    for (const attachment of parsed.attachments) {
+      if (!attachment.cid || !attachment.path) continue
+      if (!attachment.contentType.startsWith('image/')) continue
+      if (total + attachment.size > INLINE_IMAGE_TOTAL_LIMIT) continue
+      try {
+        const content = await readFile(attachment.path)
+        total += content.byteLength
+        const cid = attachment.cid.replace(/^<|>$/g, '')
+        images.set(cid, `data:${attachment.contentType};base64,${content.toString('base64')}`)
+      } catch {
+        // A cache file that disappeared mid-request only costs one inline image.
+      }
+    }
+    return images
   }
 }

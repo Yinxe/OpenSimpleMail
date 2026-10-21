@@ -37,6 +37,32 @@ export class ListMessagesQueryDto {
   q?: string
 }
 
+export class UnifiedQueryDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 512)
+  mailbox = 'INBOX'
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  page = 1
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize = 30
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string
+}
+
 export class MailboxQueryDto {
   @IsString()
   @Length(1, 512)

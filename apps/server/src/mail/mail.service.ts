@@ -6,10 +6,18 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common'
-import type { MailboxDto, MessageDetailDto, MessagePageDto, SendResultDto } from '@osm/shared'
+import type {
+  MailboxDto,
+  MessageDetailDto,
+  MessagePageDto,
+  SendResultDto,
+  UnifiedMessageDto,
+  UnifiedMessagePageDto,
+} from '@osm/shared'
 import { AccountsService } from '../accounts/accounts.service'
 import { ContactsService } from '../contacts/contacts.service'
 import { DemoService } from '../demo/demo.service'
+import { AttachmentStorage } from './attachment-storage'
 import { ImapPool } from './imap.pool'
 import { ImapProvider } from './imap.provider'
 import type {
@@ -19,6 +27,7 @@ import type {
   OutgoingAttachment,
   OutgoingMessage,
 } from './mail.types'
+import { ParsedMessageCache } from './parsed-cache'
 import { SmtpService } from './smtp.service'
 
 interface ParsedAddress {
@@ -75,12 +84,20 @@ export class MailService {
     private readonly pool: ImapPool,
     private readonly smtp: SmtpService,
     private readonly contacts: ContactsService,
+    private readonly storage: AttachmentStorage,
+    private readonly cache: ParsedMessageCache,
   ) {}
 
   async provider(userId: string, accountId: string): Promise<MailProvider> {
     const row = this.accounts.getRow(userId, accountId)
     if (row.kind === 'demo') return this.demo.providerFor(row)
-    return new ImapProvider(this.pool, this.smtp, this.accounts.credentialsFor(row))
+    return new ImapProvider(
+      this.pool,
+      this.smtp,
+      this.accounts.credentialsFor(row),
+      this.storage,
+      this.cache,
+    )
   }
 
   async listMailboxes(userId: string, accountId: string): Promise<MailboxDto[]> {
@@ -95,6 +112,60 @@ export class MailService {
   ): Promise<MessagePageDto> {
     const provider = await this.provider(userId, accountId)
     return this.run(() => provider.listMessages(options), '无法读取邮件列表')
+  }
+
+  async listUnified(
+    userId: string,
+    options: { mailbox: string; page: number; pageSize: number; query?: string },
+  ): Promise<UnifiedMessagePageDto> {
+    const accounts = this.accounts.list(userId)
+    const messages: UnifiedMessageDto[] = []
+    let total = 0
+    let failed = 0
+
+    for (const account of accounts) {
+      try {
+        const provider = await this.provider(userId, account.id)
+        // To fill one global page we need the first `page * pageSize` messages
+        // from every account, so fetch each account's pages 1..page.
+        for (let current = 1; current <= options.page; current += 1) {
+          const pageData = await provider.listMessages({
+            mailbox: options.mailbox,
+            page: current,
+            pageSize: options.pageSize,
+            query: options.query,
+          })
+          if (current === 1) total += pageData.total
+          messages.push(
+            ...pageData.messages.map((message) => ({
+              ...message,
+              accountId: account.id,
+              accountName: account.name,
+              accountColor: account.color,
+            })),
+          )
+          if (pageData.messages.length < options.pageSize) break
+        }
+      } catch (error) {
+        failed += 1
+        const detail = error instanceof Error ? error.message : String(error)
+        this.logger.warn(`Unified inbox skipped ${account.email}: ${detail}`)
+      }
+    }
+
+    if (accounts.length > 0 && failed === accounts.length) {
+      throw new BadGatewayException('无法读取统一收件箱：所有账户均连接失败')
+    }
+
+    messages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    const start = (options.page - 1) * options.pageSize
+    return {
+      messages: messages.slice(start, start + options.pageSize),
+      total,
+      page: options.page,
+      pageSize: options.pageSize,
+      ...(failed > 0 ? { failedAccounts: failed } : {}),
+    }
   }
 
   async getMessage(
@@ -217,9 +288,11 @@ export class MailService {
     const attachments: OutgoingAttachment[] = input.files.map((file) => ({
       filename: basename(file.originalname).replace(/[\r\n]/g, '_'),
       contentType: file.mimetype || 'application/octet-stream',
-      content: file.buffer,
+      // Multer wrote the upload straight to disk; the composer reads it back.
+      path: file.path,
+      size: file.size,
     }))
-    const totalBytes = attachments.reduce((sum, item) => sum + item.content.byteLength, 0)
+    const totalBytes = attachments.reduce((sum, item) => sum + item.size, 0)
     if (totalBytes > this.accounts.maxAttachmentBytes) {
       throw new BadRequestException(
         `附件总大小不能超过 ${Math.round(this.accounts.maxAttachmentBytes / 1024 / 1024)} MB`,

@@ -16,6 +16,13 @@ export interface AppConfig {
   sessionDays: number
   demoEnabled: boolean
   maxAttachmentMb: number
+  /**
+   * Scratch directory for outgoing uploads and for attachments extracted while
+   * reading a message. Absolute; defaults to a sibling of the database file.
+   */
+  attachmentDir: string
+  /** Upper bound for the on-disk attachment cache, in MB. */
+  attachmentCacheMb: number
   cookieSecure: boolean
   /** Number of reverse-proxy hops to trust for req.ip / req.protocol. 0 disables. */
   trustProxy: number
@@ -67,6 +74,14 @@ export function loadAppConfig(): AppConfig {
   // process working directory: `npm run dev` starts with apps/server as cwd,
   // while `npm start` runs from the root, and both must open the same file.
   const databasePath = process.env.DATABASE_PATH?.trim() || 'data/open-simple-mail.db'
+  const resolvedDatabasePath = isAbsolute(databasePath)
+    ? databasePath
+    : resolve(PROJECT_ROOT, databasePath)
+
+  // Attachments are streamed to disk instead of being held in memory. The
+  // default keeps them next to the SQLite file so the Docker volume that
+  // already carries the database covers them too.
+  const attachmentDir = process.env.ATTACHMENT_DIR?.trim()
 
   return {
     nodeEnv,
@@ -74,11 +89,17 @@ export function loadAppConfig(): AppConfig {
     port,
     host: process.env.HOST ?? '0.0.0.0',
     appSecret,
-    databasePath: isAbsolute(databasePath) ? databasePath : resolve(PROJECT_ROOT, databasePath),
+    databasePath: resolvedDatabasePath,
     webOrigins,
     sessionDays: int(process.env.SESSION_DAYS, 30),
     demoEnabled: bool(process.env.DEMO_ENABLED, true),
     maxAttachmentMb: int(process.env.MAX_ATTACHMENT_MB, 25),
+    attachmentDir: attachmentDir
+      ? isAbsolute(attachmentDir)
+        ? attachmentDir
+        : resolve(PROJECT_ROOT, attachmentDir)
+      : join(dirname(resolvedDatabasePath), 'attachments'),
+    attachmentCacheMb: int(process.env.ATTACHMENT_CACHE_MB, 256),
     cookieSecure: bool(process.env.COOKIE_SECURE, false),
     trustProxy: int(process.env.TRUST_PROXY, 0),
     adminRecoveryPassword,

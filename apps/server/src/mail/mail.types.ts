@@ -27,7 +27,9 @@ export interface ListMessagesOptions {
 export interface OutgoingAttachment {
   filename: string
   contentType: string
-  content: Buffer
+  /** Absolute path of the uploaded file; the MIME message is streamed from disk. */
+  path: string
+  size: number
 }
 
 export interface OutgoingMessage {
@@ -50,7 +52,11 @@ export interface FlagUpdate {
 export interface AttachmentPayload {
   filename: string
   contentType: string
-  content: Buffer
+  size: number
+  /** Local file holding the bytes; streamed to the client when present. */
+  path: string | null
+  /** In-memory bytes, used by providers that have no disk cache (demo workspace). */
+  content: Buffer | null
 }
 
 export interface DeleteResult {

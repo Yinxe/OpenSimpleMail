@@ -2,7 +2,14 @@ import { type ChildProcessByStdio, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
-import type { AccountDto, ContactDto, MailboxDto, MessagePageDto, UserDto } from '@osm/shared'
+import type {
+  AccountDto,
+  ContactDto,
+  MailboxDto,
+  MessagePageDto,
+  UnifiedMessagePageDto,
+  UserDto,
+} from '@osm/shared'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const PORT = 4300 + Math.floor(Math.random() * 300)
@@ -446,6 +453,21 @@ describe('demo mailbox', () => {
     expect(page.status).toBe(200)
     expect(page.body.messages).toHaveLength(5)
     expect(page.body.total).toBeGreaterThan(5)
+  })
+
+  it('paginates the unified inbox', async () => {
+    const first = await client.json<UnifiedMessagePageDto>('/messages/unified?page=1&pageSize=3')
+    expect(first.status).toBe(200)
+    expect(first.body.messages).toHaveLength(3)
+    expect(first.body.total).toBeGreaterThan(3)
+    expect(first.body.messages.every((item) => Boolean(item.accountId))).toBe(true)
+
+    const second = await client.json<UnifiedMessagePageDto>('/messages/unified?page=2&pageSize=3')
+    expect(second.body.messages).toHaveLength(3)
+    const firstKeys = new Set(first.body.messages.map((item) => `${item.accountId}:${item.uid}`))
+    expect(
+      second.body.messages.every((item) => !firstKeys.has(`${item.accountId}:${item.uid}`)),
+    ).toBe(true)
   })
 
   it('reads a message, then marks it read and starred', async () => {

@@ -169,6 +169,21 @@ export interface MessagePageDto {
   pageSize: number
 }
 
+export interface UnifiedMessageDto extends MessageSummaryDto {
+  accountId: string
+  accountName: string
+  accountColor: string
+}
+
+export interface UnifiedMessagePageDto {
+  messages: UnifiedMessageDto[]
+  total: number
+  page: number
+  pageSize: number
+  /** Number of accounts that could not be read for this page. */
+  failedAccounts?: number
+}
+
 export interface SendResultDto {
   messageId: string
   accepted: string[]
