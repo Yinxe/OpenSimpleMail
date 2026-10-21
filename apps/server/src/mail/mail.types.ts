@@ -3,6 +3,7 @@ import type {
   MailboxDto,
   MessageDetailDto,
   MessagePageDto,
+  MoveOutcomeDto,
   SendResultDto,
   TestResultDto,
 } from '@osm/shared'
@@ -59,9 +60,9 @@ export interface AttachmentPayload {
   content: Buffer | null
 }
 
-export interface DeleteResult {
-  movedTo?: string
-}
+export type MoveOutcome = MoveOutcomeDto
+
+export type DeleteResult = MoveOutcome
 
 export interface MailProvider {
   listMailboxes(): Promise<MailboxDto[]>
@@ -71,8 +72,8 @@ export interface MailProvider {
   setFlags(mailbox: string, uid: number, flags: FlagUpdate): Promise<void>
   setFlagsMany(mailbox: string, uids: number[], flags: FlagUpdate): Promise<void>
   markMailboxRead(mailbox: string): Promise<void>
-  move(mailbox: string, uid: number, destination: string): Promise<void>
-  moveMany(mailbox: string, uids: number[], destination: string): Promise<void>
+  move(mailbox: string, uid: number, destination: string): Promise<MoveOutcome>
+  moveMany(mailbox: string, uids: number[], destination: string): Promise<MoveOutcome>
   delete(mailbox: string, uid: number): Promise<DeleteResult>
   deleteMany(mailbox: string, uids: number[]): Promise<DeleteResult>
   createMailbox(path: string): Promise<void>

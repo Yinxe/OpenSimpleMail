@@ -24,6 +24,7 @@ import type {
   AttachmentPayload,
   FlagUpdate,
   MailProvider,
+  MoveOutcome,
   OutgoingAttachment,
   OutgoingMessage,
 } from './mail.types'
@@ -226,9 +227,9 @@ export class MailService {
     mailbox: string,
     uid: number,
     destination: string,
-  ): Promise<void> {
+  ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
-    await this.run(() => provider.move(mailbox, uid, destination), '无法移动邮件')
+    return this.run(() => provider.move(mailbox, uid, destination), '无法移动邮件')
   }
 
   async moveMany(
@@ -237,9 +238,9 @@ export class MailService {
     mailbox: string,
     uids: number[],
     destination: string,
-  ): Promise<void> {
+  ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
-    await this.run(() => provider.moveMany(mailbox, uids, destination), '无法批量移动邮件')
+    return this.run(() => provider.moveMany(mailbox, uids, destination), '无法批量移动邮件')
   }
 
   async remove(
@@ -247,7 +248,7 @@ export class MailService {
     accountId: string,
     mailbox: string,
     uid: number,
-  ): Promise<{ movedTo?: string }> {
+  ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
     return this.run(() => provider.delete(mailbox, uid), '无法删除邮件')
   }
@@ -257,7 +258,7 @@ export class MailService {
     accountId: string,
     mailbox: string,
     uids: number[],
-  ): Promise<{ movedTo?: string }> {
+  ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
     return this.run(() => provider.deleteMany(mailbox, uids), '无法批量删除邮件')
   }

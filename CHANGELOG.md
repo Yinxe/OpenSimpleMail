@@ -10,6 +10,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Changed
 
+- Undo archive and delete: `move`/`delete` responses now report the destination mailbox and the source→destination UID map from IMAP `COPYUID`, so the toast can move a message (or a whole batch, grouped per account) back to where it came from. Servers without UIDPLUS simply get no undo entry.
 - Stream attachments through disk instead of the heap: outgoing uploads are written to `data/attachments/upload/` and read back by the MIME composer, while incoming messages are parsed from the IMAP stream with each attachment extracted to `data/attachments/cache/`. A 25 MB send or a 40 MB message no longer holds tens of megabytes in memory.
 - Replace the in-memory parsed-message cache with one that keeps only the text body and attachment metadata, backed by a disk cache bounded by `ATTACHMENT_CACHE_MB` (default 256 MB), evicted least-recently-used and swept on startup.
 - Report the real attachment size in the reader (it used to be missing for IMAP accounts), and inline `cid:` images from the disk cache under a 12 MB total budget.

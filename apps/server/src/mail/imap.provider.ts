@@ -21,6 +21,7 @@ import type {
   ListMessagesOptions,
   MailCredentials,
   MailProvider,
+  MoveOutcome,
   OutgoingMessage,
 } from './mail.types'
 import {
@@ -194,6 +195,12 @@ function mapParsedAddresses(value: AddressObject | AddressObject[] | undefined):
 function referencesOf(value: string[] | string | undefined): string[] {
   if (!value) return []
   return Array.isArray(value) ? value : [value]
+}
+
+/** Convert ImapFlow's COPYUID map into the wire shape the client can undo with. */
+function uidPairs(result: { uidMap?: Map<number, number> } | false): MoveOutcome['uidMap'] {
+  if (!result || !result.uidMap || result.uidMap.size === 0) return undefined
+  return [...result.uidMap].map(([from, to]) => ({ from, to }))
 }
 
 /**
@@ -534,11 +541,11 @@ export class ImapProvider implements MailProvider {
     dropStarredCache(this.creds.accountId)
   }
 
-  async move(mailbox: string, uid: number, destination: string): Promise<void> {
-    await this.pool.withClient(this.creds, async (client) => {
+  async move(mailbox: string, uid: number, destination: string): Promise<MoveOutcome> {
+    const result = await this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
       try {
-        await client.messageMove(uid, destination, { uid: true })
+        return await client.messageMove(uid, destination, { uid: true })
       } finally {
         lock.release()
       }
@@ -546,14 +553,15 @@ export class ImapProvider implements MailProvider {
     this.cache.drop(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
+    return { movedTo: destination, uidMap: uidPairs(result) }
   }
 
-  async moveMany(mailbox: string, uids: number[], destination: string): Promise<void> {
-    if (uids.length === 0) return
-    await this.pool.withClient(this.creds, async (client) => {
+  async moveMany(mailbox: string, uids: number[], destination: string): Promise<MoveOutcome> {
+    if (uids.length === 0) return {}
+    const result = await this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
       try {
-        await client.messageMove(uids, destination, { uid: true })
+        return await client.messageMove(uids, destination, { uid: true })
       } finally {
         lock.release()
       }
@@ -561,6 +569,7 @@ export class ImapProvider implements MailProvider {
     for (const uid of uids) this.cache.drop(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
+    return { movedTo: destination, uidMap: uidPairs(result) }
   }
 
   async delete(mailbox: string, uid: number): Promise<DeleteResult> {
@@ -574,8 +583,8 @@ export class ImapProvider implements MailProvider {
             /^(trash|deleted items|已删除|废纸篓)$/i.test(item.name),
         )
         if (trash && trash.path !== mailbox) {
-          await client.messageMove(uid, trash.path, { uid: true })
-          return { movedTo: trash.path }
+          const moved = await client.messageMove(uid, trash.path, { uid: true })
+          return { movedTo: trash.path, uidMap: uidPairs(moved) }
         }
         await client.messageDelete(uid, { uid: true })
         return {}
@@ -601,8 +610,8 @@ export class ImapProvider implements MailProvider {
             /^(trash|deleted items|已删除|废纸篓)$/i.test(item.name),
         )
         if (trash && trash.path !== mailbox) {
-          await client.messageMove(uids, trash.path, { uid: true })
-          return { movedTo: trash.path }
+          const moved = await client.messageMove(uids, trash.path, { uid: true })
+          return { movedTo: trash.path, uidMap: uidPairs(moved) }
         }
         await client.messageDelete(uids, { uid: true })
         return {}

@@ -4,6 +4,7 @@ import {
   type MessageDetailDto,
   type MessagePageDto,
   type MessageSummaryDto,
+  type MoveOutcomeDto,
   STARRED_MAILBOX,
   type UnifiedMessagePageDto,
 } from '@osm/shared'
@@ -35,6 +36,14 @@ import { useToast } from '@/lib/toast'
 import { useNewMailNotifications, useUnreadBadge } from '@/lib/unread'
 
 const DEFAULT_MAILBOX = 'INBOX'
+
+/** A reverse move that puts messages back where they were before archive/delete. */
+interface UndoMoveGroup {
+  accountId: string
+  from: string
+  to: string
+  uids: number[]
+}
 
 const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['c'], label: '写邮件' },
@@ -437,9 +446,48 @@ export function MailPage() {
     },
   })
 
+  const undoMoveMutation = useMutation({
+    mutationFn: async (groups: UndoMoveGroup[]) => {
+      for (const group of groups) {
+        await api.post(`/accounts/${group.accountId}/messages/bulk/move`, {
+          mailbox: group.from,
+          uids: group.uids,
+          destination: group.to,
+        })
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+      toast.success('已撤销')
+    },
+    onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+      toast.error('撤销失败', errorMessage(error))
+    },
+  })
+
+  /** Build the reverse move for an archive/delete, when the server reported UIDs. */
+  function undoGroupsFrom(
+    accountId: string,
+    originalMailbox: string,
+    outcome: MoveOutcomeDto | null | undefined,
+  ): UndoMoveGroup[] {
+    if (!outcome?.movedTo || !outcome.uidMap?.length) return []
+    const uids = outcome.uidMap.map((pair) => pair.to).filter((uid) => Number.isFinite(uid))
+    if (uids.length === 0) return []
+    return [{ accountId, from: outcome.movedTo, to: originalMailbox, uids }]
+  }
+
+  function undoAction(groups: UndoMoveGroup[]): { label: string; onClick: () => void } | undefined {
+    if (groups.length === 0) return undefined
+    return { label: '撤销', onClick: () => undoMoveMutation.mutate(groups) }
+  }
+
   const deleteMutation = useMutation({
     mutationFn: (vars: { accountId: string; mailbox: string; uid: number }) =>
-      api.delete<{ movedTo?: string }>(
+      api.delete<MoveOutcomeDto>(
         `/accounts/${vars.accountId}/messages/${vars.uid}?mailbox=${encodeURIComponent(
           vars.mailbox,
         )}`,
@@ -483,9 +531,11 @@ export function MailPage() {
         ? (mailboxQueries[accountIndex]?.data ?? []).find((item) => item.path === movedTo)
         : undefined
       const movedLabel = movedTo ? (movedFolder ? folderLabel(movedFolder) : movedTo) : null
+      const undo = undoGroupsFrom(vars.accountId, vars.mailbox, result)
       toast.success(
         '邮件已删除',
         movedLabel ? `已移动到「${movedLabel}」` : '服务器没有废纸篓，已永久删除',
+        undoAction(undo),
       )
     },
     onError: (error, _vars, context) => {
@@ -498,11 +548,11 @@ export function MailPage() {
 
   const moveMutation = useMutation({
     mutationFn: (vars: { accountId: string; mailbox: string; uid: number; destination: string }) =>
-      api.post(`/accounts/${vars.accountId}/messages/${vars.uid}/move`, {
+      api.post<MoveOutcomeDto>(`/accounts/${vars.accountId}/messages/${vars.uid}/move`, {
         mailbox: vars.mailbox,
         destination: vars.destination,
       }),
-    onSuccess: (_result, vars) => {
+    onSuccess: (result, vars) => {
       queryClient.invalidateQueries({ queryKey: ['messages', vars.accountId] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes', vars.accountId] })
       if (
@@ -512,7 +562,11 @@ export function MailPage() {
       ) {
         update({ uid: null, openAccount: null, openMailbox: null })
       }
-      toast.success('邮件已归档')
+      toast.success(
+        '邮件已归档',
+        undefined,
+        undoAction(undoGroupsFrom(vars.accountId, vars.mailbox, result)),
+      )
     },
     onError: (error) => toast.error('归档失败', errorMessage(error)),
   })
@@ -730,6 +784,7 @@ export function MailPage() {
     if (operation === 'delete' && !window.confirm(`删除选中的 ${count} 封邮件？`)) return
 
     let affected = count
+    const undoGroups: UndoMoveGroup[] = []
     setBulkBusy(true)
     try {
       if (operation === 'read' || operation === 'unread') {
@@ -756,24 +811,42 @@ export function MailPage() {
           return
         }
         affected = moves.reduce((sum, move) => sum + move.target.uids.length, 0)
-        await Promise.all(
-          moves.map(({ target, destination }) =>
-            api.post(`/accounts/${target.accountId}/messages/bulk/move`, {
-              mailbox: target.mailbox,
-              uids: target.uids,
-              destination,
-            }),
-          ),
+        const outcomes = await Promise.all(
+          moves.map(async ({ target, destination }) => ({
+            target,
+            outcome: await api.post<MoveOutcomeDto>(
+              `/accounts/${target.accountId}/messages/bulk/move`,
+              {
+                mailbox: target.mailbox,
+                uids: target.uids,
+                destination,
+              },
+            ),
+          })),
         )
+        for (const entry of outcomes) {
+          undoGroups.push(
+            ...undoGroupsFrom(entry.target.accountId, entry.target.mailbox, entry.outcome),
+          )
+        }
       } else {
-        await Promise.all(
-          targets.map((target) =>
-            api.post(`/accounts/${target.accountId}/messages/bulk/delete`, {
-              mailbox: target.mailbox,
-              uids: target.uids,
-            }),
-          ),
+        const outcomes = await Promise.all(
+          targets.map(async (target) => ({
+            target,
+            outcome: await api.post<MoveOutcomeDto>(
+              `/accounts/${target.accountId}/messages/bulk/delete`,
+              {
+                mailbox: target.mailbox,
+                uids: target.uids,
+              },
+            ),
+          })),
         )
+        for (const entry of outcomes) {
+          undoGroups.push(
+            ...undoGroupsFrom(entry.target.accountId, entry.target.mailbox, entry.outcome),
+          )
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ['messages'] })
@@ -792,6 +865,8 @@ export function MailPage() {
           : operation === 'archive'
             ? `已归档 ${affected} 封邮件`
             : `已更新 ${affected} 封邮件`,
+        undefined,
+        operation === 'delete' || operation === 'archive' ? undoAction(undoGroups) : undefined,
       )
     } catch (error) {
       toast.error('批量操作失败', errorMessage(error))

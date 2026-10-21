@@ -196,6 +196,16 @@ export interface UnifiedMessagePageDto {
   failedAccounts?: number
 }
 
+/**
+ * Result of moving or deleting messages. `uidMap` lets the client undo the
+ * operation by moving the messages back from `movedTo`; servers without
+ * UIDPLUS leave it out, so the client offers no undo.
+ */
+export interface MoveOutcomeDto {
+  movedTo?: string
+  uidMap?: Array<{ from: number; to: number }>
+}
+
 export interface SendResultDto {
   messageId: string
   accepted: string[]

@@ -33,6 +33,7 @@ import {
   SendMessageDto,
 } from './mail.dto'
 import { MailService } from './mail.service'
+import type { MoveOutcome } from './mail.types'
 
 /** Files accepted in one compose request; the module configures the size limit. */
 export const MAX_UPLOAD_FILES = 10
@@ -171,13 +172,13 @@ export class MailController {
   }
 
   @Post('messages/bulk/move')
-  @HttpCode(204)
+  @HttpCode(200)
   async bulkMove(
     @CurrentUser('id') userId: string,
     @Param('accountId') accountId: string,
     @Body() body: BulkMoveDto,
-  ): Promise<void> {
-    await this.mail.moveMany(userId, accountId, body.mailbox, body.uids, body.destination)
+  ): Promise<MoveOutcome> {
+    return this.mail.moveMany(userId, accountId, body.mailbox, body.uids, body.destination)
   }
 
   @Post('messages/bulk/delete')
@@ -186,7 +187,7 @@ export class MailController {
     @CurrentUser('id') userId: string,
     @Param('accountId') accountId: string,
     @Body() body: BulkDeleteDto,
-  ): Promise<{ movedTo?: string }> {
+  ): Promise<MoveOutcome> {
     return this.mail.removeMany(userId, accountId, body.mailbox, body.uids)
   }
 
@@ -206,14 +207,14 @@ export class MailController {
   }
 
   @Post('messages/:uid/move')
-  @HttpCode(204)
+  @HttpCode(200)
   async move(
     @CurrentUser('id') userId: string,
     @Param('accountId') accountId: string,
     @Param('uid', ParseIntPipe) uid: number,
     @Body() body: MoveMessageDto,
-  ): Promise<void> {
-    await this.mail.move(userId, accountId, body.mailbox, uid, body.destination)
+  ): Promise<MoveOutcome> {
+    return this.mail.move(userId, accountId, body.mailbox, uid, body.destination)
   }
 
   @Delete('messages/:uid')
@@ -222,7 +223,7 @@ export class MailController {
     @Param('accountId') accountId: string,
     @Param('uid', ParseIntPipe) uid: number,
     @Query() query: MailboxQueryDto,
-  ): Promise<{ movedTo?: string }> {
+  ): Promise<MoveOutcome> {
     return this.mail.remove(userId, accountId, query.mailbox, uid)
   }
 

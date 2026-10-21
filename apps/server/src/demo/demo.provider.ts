@@ -16,6 +16,7 @@ import type {
   FlagUpdate,
   ListMessagesOptions,
   MailProvider,
+  MoveOutcome,
   OutgoingMessage,
 } from '../mail/mail.types'
 import { sanitizeEmailHtml } from '../mail/message-sanitizer'
@@ -197,20 +198,26 @@ export class DemoProvider implements MailProvider {
     if (changed) this.save()
   }
 
-  async move(_mailbox: string, uid: number, destination: string): Promise<void> {
+  async move(_mailbox: string, uid: number, destination: string): Promise<MoveOutcome> {
     const message = this.find(uid)
     message.mailbox = destination
     message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
     this.save()
+    // Demo messages keep their UID across folders, so the mapping is the identity.
+    return { movedTo: destination, uidMap: [{ from: uid, to: uid }] }
   }
 
-  async moveMany(_mailbox: string, uids: number[], destination: string): Promise<void> {
+  async moveMany(_mailbox: string, uids: number[], destination: string): Promise<MoveOutcome> {
     const messages = this.findMany(uids)
     for (const message of messages) {
       message.mailbox = destination
       message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
     }
     if (messages.length > 0) this.save()
+    return {
+      movedTo: destination,
+      uidMap: messages.map((message) => ({ from: message.uid, to: message.uid })),
+    }
   }
 
   async delete(_mailbox: string, uid: number): Promise<DeleteResult> {
@@ -224,7 +231,7 @@ export class DemoProvider implements MailProvider {
     message.mailbox = 'Trash'
     message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
     this.save()
-    return { movedTo: 'Trash' }
+    return { movedTo: 'Trash', uidMap: [{ from: uid, to: uid }] }
   }
 
   async deleteMany(mailbox: string, uids: number[]): Promise<DeleteResult> {
@@ -235,12 +242,16 @@ export class DemoProvider implements MailProvider {
       this.save()
       return {}
     }
-    for (const message of this.findMany(uids)) {
+    const moved = this.findMany(uids)
+    for (const message of moved) {
       message.mailbox = 'Trash'
       message.flags = message.flags.filter((flag) => flag !== '\\Deleted')
     }
     this.save()
-    return { movedTo: 'Trash' }
+    return {
+      movedTo: 'Trash',
+      uidMap: moved.map((message) => ({ from: message.uid, to: message.uid })),
+    }
   }
 
   async createMailbox(path: string): Promise<void> {

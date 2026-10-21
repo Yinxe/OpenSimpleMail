@@ -8,6 +8,7 @@ import type {
   ContactDto,
   MailboxDto,
   MessagePageDto,
+  MoveOutcomeDto,
   UnifiedMessagePageDto,
   UserDto,
 } from '@osm/shared'
@@ -605,11 +606,13 @@ describe('demo mailbox', () => {
     expect(changed).toHaveLength(3)
     expect(changed.every((item) => item.unread)).toBe(true)
 
-    const moved = await client.json(
+    const moved = await client.json<MoveOutcomeDto>(
       `/accounts/${account.id}/messages/bulk/move`,
       post({ mailbox: 'INBOX', uids, destination: 'Archive' }),
     )
-    expect(moved.status).toBe(204)
+    expect(moved.status).toBe(200)
+    expect(moved.body.movedTo).toBe('Archive')
+    expect(moved.body.uidMap).toHaveLength(3)
 
     const archive = await client.json<MessagePageDto>(
       `/accounts/${account.id}/messages?mailbox=Archive&page=1&pageSize=50`,
@@ -741,11 +744,13 @@ describe('demo mailbox', () => {
     const message = page.body.messages[0]
     if (!message) throw new Error('demo inbox is empty')
 
-    const moved = await client.json(
+    const moved = await client.json<{ movedTo?: string; uidMap?: { from: number; to: number }[] }>(
       `/accounts/${account.id}/messages/${message.uid}/move`,
       post({ mailbox: 'INBOX', destination: 'Archive' }),
     )
-    expect(moved.status).toBe(204)
+    expect(moved.status).toBe(200)
+    expect(moved.body.movedTo).toBe('Archive')
+    expect(moved.body.uidMap).toEqual([{ from: message.uid, to: message.uid }])
 
     const archive = await client.json<MessagePageDto>(
       `/accounts/${account.id}/messages?mailbox=Archive&page=1&pageSize=50`,
@@ -758,6 +763,34 @@ describe('demo mailbox', () => {
     )
     expect(deleted.status).toBe(200)
     expect(deleted.body.movedTo).toBe('Trash')
+  })
+
+  it('undoes a delete by moving the message back', async () => {
+    const page = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=1`,
+    )
+    const message = page.body.messages[0]
+    if (!message) throw new Error('demo inbox is empty')
+
+    const deleted = await client.json<{
+      movedTo?: string
+      uidMap?: { from: number; to: number }[]
+    }>(`/accounts/${account.id}/messages/${message.uid}?mailbox=INBOX`, { method: 'DELETE' })
+    expect(deleted.status).toBe(200)
+    expect(deleted.body.movedTo).toBe('Trash')
+    const trashUids = (deleted.body.uidMap ?? []).map((pair) => pair.to)
+    expect(trashUids).toEqual([message.uid])
+
+    const restored = await client.json(
+      `/accounts/${account.id}/messages/bulk/move`,
+      post({ mailbox: 'Trash', uids: trashUids, destination: 'INBOX' }),
+    )
+    expect(restored.status).toBe(200)
+
+    const inbox = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=50`,
+    )
+    expect(inbox.body.messages.some((item) => item.uid === message.uid)).toBe(true)
   })
 
   it('creates, updates and removes an IMAP account without connecting', async () => {
