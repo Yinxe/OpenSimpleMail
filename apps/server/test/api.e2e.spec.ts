@@ -1,5 +1,6 @@
 import { type ChildProcessByStdio, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { createServer, type Server, type Socket } from 'node:net'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import type {
@@ -77,7 +78,48 @@ function post(body: unknown): RequestInit {
 }
 
 let server: ChildProcessByStdio<null, Readable, Readable>
+let clamd: Server | null = null
 const logs: string[] = []
+
+/**
+ * Stand-in clamd: speaks enough INSTREAM to exercise the send path, and flags
+ * any payload containing the EICAR marker so the block path can be tested.
+ */
+function startFakeClamd(): Promise<number> {
+  return new Promise((resolve) => {
+    const fake = createServer((socket: Socket) => {
+      let buffer = Buffer.alloc(0)
+      let payload = Buffer.alloc(0)
+      let handshake = false
+      socket.on('data', (chunk) => {
+        buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)])
+        if (!handshake) {
+          if (buffer.length < 10) return
+          buffer = buffer.subarray(10)
+          handshake = true
+        }
+        for (;;) {
+          if (buffer.length < 4) return
+          const size = buffer.readUInt32BE(0)
+          if (size === 0) {
+            socket.end(
+              payload.includes('EICAR') ? 'stream: Eicar-Test-Signature FOUND\0' : 'stream: OK\0',
+            )
+            return
+          }
+          if (buffer.length < 4 + size) return
+          payload = Buffer.concat([payload, buffer.subarray(4, 4 + size)])
+          buffer = buffer.subarray(4 + size)
+        }
+      })
+    })
+    fake.listen(0, '127.0.0.1', () => {
+      const address = fake.address()
+      clamd = fake
+      resolve(typeof address === 'object' && address ? address.port : 0)
+    })
+  })
+}
 
 async function waitForServer(): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -97,6 +139,7 @@ beforeAll(async () => {
     throw new Error('dist/main.js is missing; run `npm run build` before the e2e tests')
   }
   mkdirSync(DB_DIR, { recursive: true })
+  const clamdPort = await startFakeClamd()
   server = spawn(process.execPath, ['dist/main.js'], {
     cwd: process.cwd(),
     env: {
@@ -110,6 +153,8 @@ beforeAll(async () => {
       DEMO_ENABLED: 'true',
       ADMIN_RECOVERY_PASSWORD: 'recovery-password-123',
       COOKIE_SECURE: 'false',
+      CLAMAV_HOST: '127.0.0.1',
+      CLAMAV_PORT: String(clamdPort),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -124,6 +169,7 @@ afterAll(async () => {
     await new Promise((resolve) => setTimeout(resolve, 300))
     if (!server.killed) server.kill('SIGKILL')
   }
+  clamd?.close()
   for (const suffix of ['', '-wal', '-shm']) {
     rmSync(`${DB_PATH}${suffix}`, { force: true })
   }
@@ -997,6 +1043,26 @@ describe('demo mailbox', () => {
     const message = sentFolder.body.messages.find((item) => item.subject === 'E2E test message')
     expect(message).toBeDefined()
     expect(message?.hasAttachments).toBe(true)
+  })
+
+  it('blocks an attachment the scanner reports as infected', async () => {
+    const form = new FormData()
+    form.append('to', 'virus@example.com')
+    form.append('subject', 'Eicar test')
+    form.append('text', 'see attachment')
+    form.append(
+      'attachments',
+      new Blob(['X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*']),
+      'eicar.txt',
+    )
+
+    const response = await client.request(`/accounts/${account.id}/send`, {
+      method: 'POST',
+      body: form,
+    })
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { message: string | string[] }
+    expect(String(body.message)).toContain('病毒')
   })
 
   it('moves a message to Archive and then to Trash', async () => {

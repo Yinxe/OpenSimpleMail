@@ -15,6 +15,7 @@ import type {
   UnifiedMessagePageDto,
 } from '@osm/shared'
 import { AccountsService } from '../accounts/accounts.service'
+import { ClamAvService } from '../common/clamav.service'
 import { ContactsService } from '../contacts/contacts.service'
 import { DemoService } from '../demo/demo.service'
 import { AttachmentStorage } from './attachment-storage'
@@ -89,6 +90,7 @@ export class MailService {
     private readonly contacts: ContactsService,
     private readonly storage: AttachmentStorage,
     private readonly cache: ParsedMessageCache,
+    private readonly clamav: ClamAvService,
   ) {}
 
   async provider(userId: string, accountId: string): Promise<MailProvider> {
@@ -356,6 +358,12 @@ export class MailService {
       throw new BadRequestException(
         `附件总大小不能超过 ${Math.round(this.accounts.maxAttachmentBytes / 1024 / 1024)} MB`,
       )
+    }
+
+    if (this.clamav.enabled) {
+      for (const attachment of attachments) {
+        await this.clamav.scanFile(attachment.path, attachment.filename)
+      }
     }
 
     const message: OutgoingMessage = {

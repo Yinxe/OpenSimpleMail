@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { MulterModule } from '@nestjs/platform-express'
 import { AccountsModule } from '../accounts/accounts.module'
+import { ClamAvService } from '../common/clamav.service'
 import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { ContactsModule } from '../contacts/contacts.module'
 import { DemoModule } from '../demo/demo.module'
@@ -33,6 +34,6 @@ import { UnifiedController } from './unified.controller'
     }),
   ],
   controllers: [MailController, UnifiedController],
-  providers: [MailService],
+  providers: [MailService, ClamAvService],
 })
 export class MailModule {}

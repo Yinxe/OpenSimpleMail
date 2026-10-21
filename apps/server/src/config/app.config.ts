@@ -32,6 +32,9 @@ export interface AppConfig {
   allowPrivateMailHosts: boolean
   /** Hostnames that stay allowed even when private networks are blocked. */
   mailHostAllowlist: string[]
+  /** clamd host for optional attachment scanning. Empty disables it. */
+  clamavHost: string
+  clamavPort: number
   /** Absolute path to the built React app, or null when it is not present. */
   webDist: string | null
   version: string
@@ -114,6 +117,8 @@ export function loadAppConfig(): AppConfig {
     adminRecoveryPassword,
     allowPrivateMailHosts: bool(process.env.ALLOW_PRIVATE_MAIL_HOSTS, false),
     mailHostAllowlist,
+    clamavHost: process.env.CLAMAV_HOST?.trim() ?? '',
+    clamavPort: int(process.env.CLAMAV_PORT, 3310),
     webDist: process.env.WEB_DIST ? resolve(process.env.WEB_DIST) : null,
     version: process.env.APP_VERSION ?? '0.1.0',
   }
