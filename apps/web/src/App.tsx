@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
 import { useAuth } from '@/lib/auth'
+import { useI18n } from '@/lib/i18n'
 import { LoginPage } from '@/pages/LoginPage'
 import { MailPage } from '@/pages/MailPage'
 import { RegisterPage } from '@/pages/RegisterPage'
@@ -9,25 +10,27 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import { SetupPage } from '@/pages/SetupPage'
 
 function BootScreen() {
+  const { t } = useI18n()
   return (
     <div className="boot">
       <Logo />
-      <span className="boot__hint">正在打开邮箱…</span>
+      <span className="boot__hint">{t('app.loading')}</span>
     </div>
   )
 }
 
 function ConnectionProblem() {
+  const { t } = useI18n()
   return (
     <div className="boot">
       <Logo />
-      <span className="boot__hint">无法连接后端服务，请确认服务器已启动</span>
+      <span className="boot__hint">{t('app.backendDown')}</span>
       <button
         type="button"
         className="button button--soft button--sm"
         onClick={() => window.location.reload()}
       >
-        重新加载
+        {t('app.reload')}
       </button>
     </div>
   )

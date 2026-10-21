@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useI18n } from '@/lib/i18n'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -8,6 +9,7 @@ interface AuthLayoutProps {
 }
 
 export function AuthLayout({ children, version }: AuthLayoutProps) {
+  const { t } = useI18n()
   return (
     <div className="auth">
       <aside className="auth__brand">
@@ -17,17 +19,15 @@ export function AuthLayout({ children, version }: AuthLayoutProps) {
         <div className="auth__pitch">
           <p className="eyebrow">SELF-HOSTED · OPEN SOURCE</p>
           <h1>
-            把所有邮箱，
+            {t('auth.tagline1')}
             <br />
-            收进一个安静的地方。
+            {t('auth.tagline2')}
           </h1>
-          <p className="auth__lead">
-            一个界面管理多个 IMAP 邮箱。没有广告，没有追踪，数据留在你自己的服务器上。
-          </p>
+          <p className="auth__lead">{t('auth.lede')}</p>
           <ul className="auth__features">
-            <li>多账号统一收件箱</li>
-            <li>标准 IMAP / SMTP，兼容主流邮箱</li>
-            <li>凭据加密存储，会话 HttpOnly</li>
+            <li>{t('auth.feature1')}</li>
+            <li>{t('auth.feature2')}</li>
+            <li>{t('auth.feature3')}</li>
           </ul>
         </div>
         <footer className="auth__brand-foot">

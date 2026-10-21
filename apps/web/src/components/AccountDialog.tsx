@@ -2,6 +2,8 @@ import type { AccountDto, ServerSettingsDto } from '@osm/shared'
 import { Check, Server, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from '@/lib/api'
+import { useI18n } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/locales'
 import { useToast } from '@/lib/toast'
 import { Modal } from './Modal'
 import { Spinner } from './Spinner'
@@ -16,6 +18,8 @@ interface AccountDialogProps {
 interface Preset {
   id: string
   label: string
+  labelKey?: MessageKey
+  hintKey?: MessageKey
   domain: string
   imap: ServerSettingsDto
   smtp: ServerSettingsDto
@@ -29,7 +33,7 @@ const PRESETS: Preset[] = [
     domain: 'gmail.com',
     imap: { host: 'imap.gmail.com', port: 993, secure: true },
     smtp: { host: 'smtp.gmail.com', port: 465, secure: true },
-    hint: 'Gmail 需要开启两步验证，并使用「应用专用密码」登录。',
+    hintKey: 'account.gmailHint',
   },
   {
     id: 'outlook',
@@ -37,31 +41,34 @@ const PRESETS: Preset[] = [
     domain: 'outlook.com',
     imap: { host: 'outlook.office365.com', port: 993, secure: true },
     smtp: { host: 'smtp.office365.com', port: 587, secure: false },
-    hint: 'Microsoft 账户通常需要应用密码，且租户管理员需允许 IMAP/SMTP。',
+    hintKey: 'account.outlookHint',
   },
   {
     id: 'qq',
-    label: 'QQ 邮箱',
+    label: 'QQ Mail',
+    labelKey: 'account.qqLabel',
     domain: 'qq.com',
     imap: { host: 'imap.qq.com', port: 993, secure: true },
     smtp: { host: 'smtp.qq.com', port: 465, secure: true },
-    hint: '在 QQ 邮箱设置中开启 IMAP/SMTP 服务，并生成授权码作为密码。',
+    hintKey: 'account.qqHint',
   },
   {
     id: '163',
-    label: '网易 163',
+    label: 'NetEase 163',
+    labelKey: 'account.163Label',
     domain: '163.com',
     imap: { host: 'imap.163.com', port: 993, secure: true },
     smtp: { host: 'smtp.163.com', port: 465, secure: true },
-    hint: '开启 IMAP/SMTP 后使用客户端授权密码，而不是登录密码。',
+    hintKey: 'account.163Hint',
   },
   {
     id: '126',
-    label: '网易 126',
+    label: 'NetEase 126',
+    labelKey: 'account.126Label',
     domain: '126.com',
     imap: { host: 'imap.126.com', port: 993, secure: true },
     smtp: { host: 'smtp.126.com', port: 465, secure: true },
-    hint: '开启 IMAP/SMTP 后使用客户端授权密码。',
+    hintKey: 'account.126Hint',
   },
   {
     id: 'icloud',
@@ -69,7 +76,7 @@ const PRESETS: Preset[] = [
     domain: 'icloud.com',
     imap: { host: 'imap.mail.me.com', port: 993, secure: true },
     smtp: { host: 'smtp.mail.me.com', port: 587, secure: false },
-    hint: 'iCloud 需要在 Apple ID 安全设置中生成 App 专用密码。',
+    hintKey: 'account.icloudHint',
   },
   {
     id: 'yahoo',
@@ -77,15 +84,16 @@ const PRESETS: Preset[] = [
     domain: 'yahoo.com',
     imap: { host: 'imap.mail.yahoo.com', port: 993, secure: true },
     smtp: { host: 'smtp.mail.yahoo.com', port: 465, secure: true },
-    hint: 'Yahoo 需要生成第三方应用密码。',
+    hintKey: 'account.yahooHint',
   },
   {
     id: 'custom',
-    label: '自定义 / 自建',
+    label: 'Custom',
+    labelKey: 'account.customLabel',
     domain: '',
     imap: { host: '', port: 993, secure: true },
     smtp: { host: '', port: 465, secure: true },
-    hint: '填写你的邮件服务商或自建服务器的 IMAP / SMTP 参数。',
+    hintKey: 'account.customHint',
   },
 ]
 
@@ -128,6 +136,7 @@ function initialState(account?: AccountDto | null): FormState {
 }
 
 export function AccountDialog({ open, account, onClose, onSaved }: AccountDialogProps) {
+  const { t } = useI18n()
   const toast = useToast()
   const [form, setForm] = useState<FormState>(() => initialState(account))
   const [preset, setPreset] = useState('custom')
@@ -167,23 +176,23 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
     const imapPort = Number.parseInt(form.imap.portText, 10)
     const smtpPort = Number.parseInt(form.smtp.portText, 10)
     if (!form.name.trim() || !form.email.trim() || !form.username.trim()) {
-      setError('请填写账户名称、邮箱地址和登录用户名')
+      setError(t('account.needBasics'))
       return
     }
     if (!editing && !form.password.trim()) {
-      setError('请填写邮箱密码或应用专用密码')
+      setError(t('account.needPassword'))
       return
     }
     if (!form.imap.host.trim() || !form.smtp.host.trim()) {
-      setError('请填写 IMAP 和 SMTP 服务器地址')
+      setError(t('account.needServers'))
       return
     }
     if (!Number.isInteger(imapPort) || imapPort < 1 || imapPort > 65535) {
-      setError('IMAP 端口无效')
+      setError(t('account.badImapPort'))
       return
     }
     if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
-      setError('SMTP 端口无效')
+      setError(t('account.badSmtpPort'))
       return
     }
 
@@ -204,7 +213,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
       const saved = editing
         ? await api.patch<AccountDto>(`/accounts/${account?.id}`, payload)
         : await api.post<AccountDto>('/accounts', payload)
-      toast.success(editing ? '邮箱设置已更新' : '邮箱已添加', saved.email)
+      toast.success(editing ? t('account.updated') : t('account.added'), saved.email)
       onSaved(saved)
       onClose()
     } catch (caught) {
@@ -219,14 +228,14 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
   return (
     <Modal
       open={open}
-      title={editing ? '编辑邮箱账户' : '添加邮箱账户'}
-      subtitle="使用标准 IMAP / SMTP 协议连接，兼容绝大多数邮箱服务商"
+      title={editing ? t('account.editTitle') : t('account.addTitle')}
+      subtitle={t('account.subtitle')}
       size="lg"
       onClose={busy ? () => undefined : onClose}
       footer={
         <div className="dialog-foot">
           <span className="dialog-foot__note">
-            <ShieldCheck size={14} /> 凭据以 AES-256-GCM 加密后存储
+            <ShieldCheck size={14} /> {t('account.encrypted')}
           </span>
           <div className="dialog-foot__actions">
             <button
@@ -235,7 +244,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
               onClick={onClose}
               disabled={busy}
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -244,7 +253,11 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
               disabled={busy}
             >
               {busy ? <Spinner /> : <Check size={16} />}
-              {editing ? '保存修改' : form.verify ? '验证并保存' : '直接保存'}
+              {editing
+                ? t('account.saveChanges')
+                : form.verify
+                  ? t('account.verifyAndSave')
+                  : t('account.saveDirectly')}
             </button>
           </div>
         </div>
@@ -260,26 +273,28 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
                 className={`preset ${preset === item.id ? 'is-active' : ''}`}
                 onClick={() => applyPreset(item)}
               >
-                {item.label}
+                {item.labelKey ? t(item.labelKey) : item.label}
               </button>
             ))}
           </div>
         ) : null}
 
-        {activePreset?.hint ? <p className="account-form__hint">{activePreset.hint}</p> : null}
+        {activePreset?.hintKey ? (
+          <p className="account-form__hint">{t(activePreset.hintKey)}</p>
+        ) : null}
 
         <div className="form-grid">
           <label className="field">
-            <span className="field__label">账户名称</span>
+            <span className="field__label">{t('account.name')}</span>
             <input
               className="input"
               value={form.name}
               onChange={(event) => patch({ name: event.target.value })}
-              placeholder="工作邮箱 / 个人邮箱"
+              placeholder={t('account.namePlaceholder')}
             />
           </label>
           <label className="field">
-            <span className="field__label">邮箱地址</span>
+            <span className="field__label">{t('account.email')}</span>
             <input
               className="input"
               type="email"
@@ -296,23 +311,23 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
             />
           </label>
           <label className="field">
-            <span className="field__label">登录用户名</span>
+            <span className="field__label">{t('account.username')}</span>
             <input
               className="input"
               value={form.username}
               onChange={(event) => patch({ username: event.target.value })}
-              placeholder="通常是完整邮箱地址"
+              placeholder={t('account.usernamePlaceholder')}
               autoComplete="off"
             />
           </label>
           <label className="field">
-            <span className="field__label">密码 / 应用专用密码</span>
+            <span className="field__label">{t('account.password')}</span>
             <input
               className="input"
               type="password"
               value={form.password}
               onChange={(event) => patch({ password: event.target.value })}
-              placeholder={editing ? '留空表示不修改' : '邮箱密码或授权码'}
+              placeholder={editing ? t('account.passwordKeep') : t('account.passwordPlaceholder')}
               autoComplete="new-password"
             />
           </label>
@@ -321,11 +336,11 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
         <div className="server-block">
           <div className="server-block__head">
             <Server size={15} />
-            <span>IMAP 收件服务器</span>
+            <span>{t('account.imapServer')}</span>
           </div>
           <div className="server-grid">
             <label className="field field--wide">
-              <span className="field__label">主机名</span>
+              <span className="field__label">{t('account.host')}</span>
               <input
                 className="input"
                 value={form.imap.host}
@@ -334,7 +349,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
               />
             </label>
             <label className="field field--port">
-              <span className="field__label">端口</span>
+              <span className="field__label">{t('account.port')}</span>
               <input
                 className="input"
                 value={form.imap.portText}
@@ -360,11 +375,11 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
         <div className="server-block">
           <div className="server-block__head">
             <Server size={15} />
-            <span>SMTP 发件服务器</span>
+            <span>{t('account.smtpServer')}</span>
           </div>
           <div className="server-grid">
             <label className="field field--wide">
-              <span className="field__label">主机名</span>
+              <span className="field__label">{t('account.host')}</span>
               <input
                 className="input"
                 value={form.smtp.host}
@@ -373,7 +388,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
               />
             </label>
             <label className="field field--port">
-              <span className="field__label">端口</span>
+              <span className="field__label">{t('account.port')}</span>
               <input
                 className="input"
                 value={form.smtp.portText}
@@ -397,20 +412,20 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
         </div>
 
         <label className="field field--wide">
-          <span className="field__label">邮件签名（纯文本，可选）</span>
+          <span className="field__label">{t('account.signature')}</span>
           <textarea
             className="input"
             rows={3}
             maxLength={2000}
             value={form.signature}
             onChange={(event) => patch({ signature: event.target.value })}
-            placeholder="例如：Yinx · 工作日 10:00–19:00"
+            placeholder={t('account.signaturePlaceholder')}
           />
         </label>
 
         <div className="account-form__footer-row">
           <div className="color-picker">
-            <span className="field__label">标识颜色</span>
+            <span className="field__label">{t('account.color')}</span>
             <div className="color-picker__swatches">
               {COLORS.map((color) => (
                 <button
@@ -419,7 +434,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
                   className={`color-dot ${form.color === color ? 'is-active' : ''}`}
                   style={{ background: color }}
                   onClick={() => patch({ color })}
-                  aria-label={`选择颜色 ${color}`}
+                  aria-label={t('account.chooseColor', { color })}
                 />
               ))}
             </div>
@@ -431,7 +446,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
                 checked={form.verify}
                 onChange={(event) => patch({ verify: event.target.checked })}
               />
-              <span>保存前验证 IMAP / SMTP 连接</span>
+              <span>{t('account.verifyBeforeSave')}</span>
             </label>
           ) : null}
         </div>

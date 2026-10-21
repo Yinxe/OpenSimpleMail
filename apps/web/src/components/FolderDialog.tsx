@@ -1,5 +1,6 @@
 import { FolderPlus, Pencil } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { useI18n } from '@/lib/i18n'
 import { Modal } from './Modal'
 import { Spinner } from './Spinner'
 
@@ -20,6 +21,7 @@ export function FolderDialog({
   onClose,
   onSubmit,
 }: FolderDialogProps) {
+  const { t } = useI18n()
   const [path, setPath] = useState(initialPath ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -40,17 +42,13 @@ export function FolderDialog({
   return (
     <Modal
       open={open}
-      title={mode === 'create' ? '新建文件夹' : '重命名文件夹'}
-      subtitle={
-        mode === 'create'
-          ? '文件夹会创建在当前账户下；层级请使用服务器的分隔符（通常是 / 或 .）'
-          : '修改完整路径；已有邮件会跟随文件夹移动'
-      }
+      title={mode === 'create' ? t('folder.createTitle') : t('folder.renameTitle')}
+      subtitle={mode === 'create' ? t('folder.createHint') : t('folder.renameHint')}
       onClose={busy ? () => undefined : onClose}
       footer={
         <div className="dialog-actions">
           <button type="button" className="button button--ghost" onClick={onClose} disabled={busy}>
-            取消
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -65,13 +63,13 @@ export function FolderDialog({
             ) : (
               <Pencil size={15} />
             )}
-            {mode === 'create' ? '创建' : '保存'}
+            {mode === 'create' ? t('folder.create') : t('common.save')}
           </button>
         </div>
       }
     >
       <label className="field">
-        <span className="field__label">文件夹路径</span>
+        <span className="field__label">{t('folder.path')}</span>
         <input
           ref={inputRef}
           className="input"
@@ -83,7 +81,7 @@ export function FolderDialog({
               submit()
             }
           }}
-          placeholder="例如：项目/2026"
+          placeholder={t('folder.pathPlaceholder')}
         />
       </label>
     </Modal>

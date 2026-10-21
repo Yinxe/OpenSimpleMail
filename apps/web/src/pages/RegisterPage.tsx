@@ -5,9 +5,11 @@ import { AuthLayout } from '@/components/AuthLayout'
 import { Spinner } from '@/components/Spinner'
 import { errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useI18n } from '@/lib/i18n'
 
 export function RegisterPage() {
   const { register, config } = useAuth()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -20,11 +22,11 @@ export function RegisterPage() {
     event.preventDefault()
     setError('')
     if (password.length < 8) {
-      setError('密码至少需要 8 个字符')
+      setError(t('register.passwordShort'))
       return
     }
     if (password !== confirm) {
-      setError('两次输入的密码不一致')
+      setError(t('register.passwordMismatch'))
       return
     }
     setBusy(true)
@@ -46,12 +48,10 @@ export function RegisterPage() {
             <LockKeyhole size={24} />
           </span>
           <p className="eyebrow">REGISTRATION CLOSED</p>
-          <h2>注册已关闭</h2>
-          <p className="auth-card__sub">
-            {config.siteName} 目前只允许管理员创建账号。如果你需要访问权限，请联系系统管理员。
-          </p>
+          <h2>{t('register.closedTitle')}</h2>
+          <p className="auth-card__sub">{t('register.closedBody', { site: config.siteName })}</p>
           <Link to="/login" className="button button--soft button--block auth-card__closed-action">
-            返回登录
+            {t('register.back')}
           </Link>
         </div>
       </AuthLayout>
@@ -62,18 +62,18 @@ export function RegisterPage() {
     <AuthLayout version={config?.version}>
       <div className="auth-card">
         <p className="eyebrow">CREATE WORKSPACE</p>
-        <h2>创建你的工作台</h2>
-        <p className="auth-card__sub">先创建本地账号，随后再添加你的邮箱账户。</p>
+        <h2>{t('register.title')}</h2>
+        <p className="auth-card__sub">{t('register.subtitle')}</p>
 
         <form className="form" onSubmit={onSubmit}>
           <label className="field">
-            <span className="field__label">昵称</span>
+            <span className="field__label">{t('register.name')}</span>
             <span className="field__control">
               <UserRound size={16} className="field__icon" />
               <input
                 type="text"
                 autoComplete="nickname"
-                placeholder="你的名字"
+                placeholder={t('register.namePlaceholder')}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 required
@@ -83,7 +83,7 @@ export function RegisterPage() {
           </label>
 
           <label className="field">
-            <span className="field__label">登录邮箱</span>
+            <span className="field__label">{t('register.email')}</span>
             <span className="field__control">
               <Mail size={16} className="field__icon" />
               <input
@@ -99,13 +99,13 @@ export function RegisterPage() {
 
           <div className="field-row">
             <label className="field">
-              <span className="field__label">密码</span>
+              <span className="field__label">{t('register.password')}</span>
               <span className="field__control">
                 <LockKeyhole size={16} className="field__icon" />
                 <input
                   type="password"
                   autoComplete="new-password"
-                  placeholder="至少 8 位"
+                  placeholder={t('register.passwordPlaceholder')}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required
@@ -114,13 +114,13 @@ export function RegisterPage() {
               </span>
             </label>
             <label className="field">
-              <span className="field__label">确认密码</span>
+              <span className="field__label">{t('register.confirm')}</span>
               <span className="field__control">
                 <LockKeyhole size={16} className="field__icon" />
                 <input
                   type="password"
                   autoComplete="new-password"
-                  placeholder="再输入一次"
+                  placeholder={t('register.confirmPlaceholder')}
                   value={confirm}
                   onChange={(event) => setConfirm(event.target.value)}
                   required
@@ -133,12 +133,13 @@ export function RegisterPage() {
 
           <button type="submit" className="button button--primary button--block" disabled={busy}>
             {busy ? <Spinner /> : <ArrowRight size={17} />}
-            创建账号
+            {t('register.submit')}
           </button>
         </form>
 
         <p className="auth-card__switch">
-          已经有账号？<Link to="/login">直接登录</Link>
+          {t('register.haveAccount')}
+          <Link to="/login">{t('register.loginLink')}</Link>
         </p>
       </div>
     </AuthLayout>

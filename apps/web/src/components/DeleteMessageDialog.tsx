@@ -1,5 +1,6 @@
 import { Trash2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { useI18n } from '@/lib/i18n'
 import { Modal } from './Modal'
 import { Spinner } from './Spinner'
 
@@ -30,6 +31,7 @@ export function DeleteMessageDialog({
   onCancel,
   onConfirm,
 }: DeleteMessageDialogProps) {
+  const { t } = useI18n()
   const cancelRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -37,15 +39,15 @@ export function DeleteMessageDialog({
   }, [open])
 
   const subtitle = !destinationKnown
-    ? '删除后会从当前列表移除'
+    ? t('delete.removesFromList')
     : destinationLabel
-      ? `将移动到「${destinationLabel}」`
-      : '这封邮件将被永久删除，无法恢复'
+      ? t('delete.movesTo', { folder: destinationLabel })
+      : t('delete.permanent')
 
   return (
     <Modal
       open={open}
-      title="删除这封邮件？"
+      title={t('delete.title')}
       subtitle={subtitle}
       onClose={onCancel}
       footer={
@@ -57,7 +59,7 @@ export function DeleteMessageDialog({
             onClick={onCancel}
             disabled={busy}
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -66,7 +68,7 @@ export function DeleteMessageDialog({
             disabled={busy}
           >
             {busy ? <Spinner /> : <Trash2 size={15} />}
-            删除
+            {t('delete.confirm')}
           </button>
         </div>
       }
@@ -76,17 +78,17 @@ export function DeleteMessageDialog({
           <Trash2 size={20} />
         </span>
         <div className="delete-summary__text">
-          <p className="delete-summary__subject">{subject.trim() || '(无主题)'}</p>
-          <p className="delete-summary__from">{sender || '未知发件人'}</p>
+          <p className="delete-summary__subject">{subject.trim() || t('delete.noSubject')}</p>
+          <p className="delete-summary__from">{sender || t('delete.unknownSender')}</p>
         </div>
       </div>
 
       <p className="delete-note">
         {!destinationKnown
-          ? '如果服务器提供废纸篓，删除后可以在那里找回。'
+          ? t('delete.recoverHint')
           : destinationLabel
-            ? `邮件会保留在「${destinationLabel}」中，需要时可以再找回。`
-            : '当前文件夹没有可用的废纸篓，删除后无法恢复。'}
+            ? t('delete.keepHint', { folder: destinationLabel })
+            : t('delete.noTrashHint')}
       </p>
 
       <label className="check delete-remember">
@@ -95,11 +97,9 @@ export function DeleteMessageDialog({
           checked={keepConfirm}
           onChange={(event) => onKeepConfirmChange(event.target.checked)}
         />
-        <span>本会话内，后续删除也需要二次确认</span>
+        <span>{t('delete.askAgain')}</span>
       </label>
-      <p className="delete-hint">
-        取消勾选后，后续删除会直接执行。仅在当前浏览器会话生效，关闭标签页后恢复；也可以在设置中随时改回来。
-      </p>
+      <p className="delete-hint">{t('delete.askAgainHint')}</p>
     </Modal>
   )
 }
