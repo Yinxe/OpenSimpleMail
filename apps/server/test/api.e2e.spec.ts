@@ -2,7 +2,7 @@ import { type ChildProcessByStdio, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
-import type { AccountDto, MailboxDto, MessagePageDto, UserDto } from '@osm/shared'
+import type { AccountDto, ContactDto, MailboxDto, MessagePageDto, UserDto } from '@osm/shared'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const PORT = 4300 + Math.floor(Math.random() * 300)
@@ -564,6 +564,10 @@ describe('demo mailbox', () => {
     })
     expect(sent.status).toBe(200)
     expect(sent.body.messageId).toMatch(/@opensimplemail\.local>$/)
+
+    const contacts = await client.json<ContactDto[]>('/contacts?q=friend')
+    expect(contacts.status).toBe(200)
+    expect(contacts.body[0]?.email).toBe('friend@example.com')
 
     const sentFolder = await client.json<MessagePageDto>(
       `/accounts/${account.id}/messages?mailbox=Sent&page=1&pageSize=5`,

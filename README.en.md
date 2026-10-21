@@ -18,7 +18,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 - Pagination, search, read/unread, star, archive and delete (moves to the server trash when available)
 - Starred view: flagged mail is collected across folders under "收藏" in the sidebar, where it can be read, un-starred or deleted and searched
 - Delete confirmation showing the subject, sender and destination, with a session-only switch to skip later confirmations (also exposed in Settings)
-- Rich-text compose, CC/BCC, attachments, per-account plain-text signature, reply/reply-all/forward quoting, and automatic copy to Sent
+- Rich-text compose, CC/BCC, attachments, per-account plain-text signature, recipient autocomplete, reply/reply-all/forward quoting, and automatic copy to Sent
 - Local draft autosave with restore and discard, so closing the composer does not lose the message
 - Encrypted mailbox credentials (AES-256-GCM), scrypt password hashing, HttpOnly sessions
 - Server-side HTML sanitization, sandboxed iframe rendering with a strict CSP, remote images blocked by default

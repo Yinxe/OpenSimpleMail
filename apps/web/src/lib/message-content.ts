@@ -150,6 +150,13 @@ function collectText(element: Element): string {
   return normalizeText(result)
 }
 
+function pushAnchor(anchor: Element, out: ContentInline[]): void {
+  const href = safeHref(anchor.getAttribute('href'))
+  const text = collectText(anchor).trim()
+  if (href && text) out.push({ type: 'link', text, href })
+  else if (text) pushText(out, text)
+}
+
 function collectInline(element: Element, out: ContentInline[]): void {
   for (const node of element.childNodes) {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -167,10 +174,7 @@ function collectInline(element: Element, out: ContentInline[]): void {
     }
 
     if (child.tagName === 'A') {
-      const href = safeHref(child.getAttribute('href'))
-      const text = collectText(child).trim()
-      if (href && text) out.push({ type: 'link', text, href })
-      else if (text) pushText(out, text)
+      pushAnchor(child, out)
       continue
     }
 
@@ -233,7 +237,7 @@ function walkChildren(element: Element, context: ParseContext): void {
     }
 
     if (tag === 'A') {
-      collectInline(child, context.current)
+      pushAnchor(child, context.current)
       continue
     }
 

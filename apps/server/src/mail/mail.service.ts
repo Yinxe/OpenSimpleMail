@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common'
 import type { MailboxDto, MessageDetailDto, MessagePageDto, SendResultDto } from '@osm/shared'
 import { AccountsService } from '../accounts/accounts.service'
+import { ContactsService } from '../contacts/contacts.service'
 import { DemoService } from '../demo/demo.service'
 import { ImapPool } from './imap.pool'
 import { ImapProvider } from './imap.provider'
@@ -20,6 +21,50 @@ import type {
 } from './mail.types'
 import { SmtpService } from './smtp.service'
 
+interface ParsedAddress {
+  name: string | null
+  address: string
+}
+
+/**
+ * Lightweight recipient splitter for contact learning. It intentionally does
+ * not try to be a full RFC 5322 parser: commas/semicolons separate entries and
+ * an optional `Name <address>` wrapper is unwrapped.
+ */
+function splitAddressList(value: string): string[] {
+  const parts: string[] = []
+  let current = ''
+  let quoted = false
+  for (const char of value) {
+    if (char === '"') quoted = !quoted
+    if (!quoted && (char === ',' || char === ';')) {
+      parts.push(current)
+      current = ''
+      continue
+    }
+    current += char
+  }
+  parts.push(current)
+  return parts
+}
+
+function parseAddressList(value: string | undefined): ParsedAddress[] {
+  if (!value?.trim()) return []
+  const result: ParsedAddress[] = []
+  for (const part of splitAddressList(value)) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const match = trimmed.match(/^(.*?)<([^>]+)>$/)
+    if (match) {
+      const name = (match[1] ?? '').trim().replace(/^"|"$/g, '').trim()
+      result.push({ name: name || null, address: (match[2] ?? '').trim() })
+    } else {
+      result.push({ name: null, address: trimmed.replace(/^"|"$/g, '').trim() })
+    }
+  }
+  return result.filter((item) => item.address.includes('@'))
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name)
@@ -29,6 +74,7 @@ export class MailService {
     private readonly demo: DemoService,
     private readonly pool: ImapPool,
     private readonly smtp: SmtpService,
+    private readonly contacts: ContactsService,
   ) {}
 
   async provider(userId: string, accountId: string): Promise<MailProvider> {
@@ -58,7 +104,11 @@ export class MailService {
     uid: number,
   ): Promise<MessageDetailDto> {
     const provider = await this.provider(userId, accountId)
-    return this.run(() => provider.getMessage(mailbox, uid), '无法读取邮件内容')
+    const detail = await this.run(() => provider.getMessage(mailbox, uid), '无法读取邮件内容')
+    // Learning from opened mail keeps autocomplete useful even before the user
+    // has sent anything to a given correspondent.
+    this.contacts.record(userId, [...detail.from, ...detail.to, ...detail.cc])
+    return detail
   }
 
   async getAttachment(
@@ -152,7 +202,13 @@ export class MailService {
     }
 
     const provider = await this.provider(userId, accountId)
-    return this.run(() => provider.send(message), '邮件发送失败')
+    const result = await this.run(() => provider.send(message), '邮件发送失败')
+    this.contacts.record(userId, [
+      ...parseAddressList(input.to),
+      ...parseAddressList(input.cc),
+      ...parseAddressList(input.bcc),
+    ])
+    return result
   }
 
   private async run<T>(action: () => Promise<T>, fallback: string): Promise<T> {

@@ -71,26 +71,27 @@ function pickMailbox(mailboxes: MailboxDto[]): string {
 }
 
 /**
- * Resolve where a delete will put the message. Returns null when the server has
- * no trash folder (or the message already sits in it), which means a permanent
- * delete and changes the confirmation copy.
+ * Resolve where a delete will put the message. `known` stays false while the
+ * account's folder list is still loading, so the dialog does not claim the
+ * delete is permanent before it knows whether a trash folder exists.
  */
-function trashDestination(
+function deleteDestination(
   accounts: AccountDto[],
   mailboxQueries: { data?: MailboxDto[] }[],
   target: DeleteTarget | null,
-): string | null {
-  if (!target) return null
+): { label: string | null; known: boolean } {
+  if (!target) return { label: null, known: false }
   const index = accounts.findIndex((account) => account.id === target.accountId)
-  if (index < 0) return null
-  const mailboxes = mailboxQueries[index]?.data ?? []
+  if (index < 0) return { label: null, known: false }
+  const mailboxes = mailboxQueries[index]?.data
+  if (!mailboxes) return { label: null, known: false }
   const trash = mailboxes.find(
     (mailbox) =>
       mailbox.specialUse === '\\Trash' ||
       /^(trash|deleted items|已删除|废纸篓)$/i.test(mailbox.name),
   )
-  if (!trash || trash.path === target.mailbox) return null
-  return folderLabel(trash)
+  if (!trash || trash.path === target.mailbox) return { label: null, known: true }
+  return { label: folderLabel(trash), known: true }
 }
 
 export function MailPage() {
@@ -437,12 +438,22 @@ export function MailPage() {
     onSuccess: (result, vars) => {
       queryClient.invalidateQueries({ queryKey: ['messages', vars.accountId] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes', vars.accountId] })
-      if (uidParam === vars.uid && detailAccountId === vars.accountId) {
+      if (
+        uidParam === vars.uid &&
+        detailAccountId === vars.accountId &&
+        detailMailbox === vars.mailbox
+      ) {
         update({ uid: null, openAccount: null, openMailbox: null })
       }
+      const movedTo = result?.movedTo
+      const accountIndex = accounts.findIndex((account) => account.id === vars.accountId)
+      const movedFolder = movedTo
+        ? (mailboxQueries[accountIndex]?.data ?? []).find((item) => item.path === movedTo)
+        : undefined
+      const movedLabel = movedTo ? (movedFolder ? folderLabel(movedFolder) : movedTo) : null
       toast.success(
         '邮件已删除',
-        result?.movedTo ? `已移动到「${result.movedTo}」` : '服务器没有废纸篓，已永久删除',
+        movedLabel ? `已移动到「${movedLabel}」` : '服务器没有废纸篓，已永久删除',
       )
     },
     onError: (error, _vars, context) => {
@@ -462,7 +473,13 @@ export function MailPage() {
     onSuccess: (_result, vars) => {
       queryClient.invalidateQueries({ queryKey: ['messages', vars.accountId] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes', vars.accountId] })
-      if (uidParam === vars.uid) update({ uid: null, openAccount: null })
+      if (
+        uidParam === vars.uid &&
+        detailAccountId === vars.accountId &&
+        detailMailbox === vars.mailbox
+      ) {
+        update({ uid: null, openAccount: null, openMailbox: null })
+      }
       toast.success('邮件已归档')
     },
     onError: (error) => toast.error('归档失败', errorMessage(error)),
@@ -728,6 +745,7 @@ export function MailPage() {
 
   const noAccounts = !accountsQuery.isLoading && accounts.length === 0
   const reading = Boolean(uidParam)
+  const pendingDestination = deleteDestination(accounts, mailboxQueries, pendingDelete)
 
   return (
     <div
@@ -832,11 +850,13 @@ export function MailPage() {
             }
             onMenu={() => setSidebarOpen(true)}
             emptyTitle={
-              starred
-                ? '还没有收藏的邮件'
-                : unified && accounts.length > 0
-                  ? '收件箱是空的'
-                  : undefined
+              query
+                ? undefined
+                : starred
+                  ? '还没有收藏的邮件'
+                  : unified && accounts.length > 0
+                    ? '收件箱是空的'
+                    : undefined
             }
             emptyBody={
               query
@@ -918,7 +938,8 @@ export function MailPage() {
         open={Boolean(pendingDelete)}
         subject={pendingDelete?.subject ?? ''}
         sender={pendingDelete?.sender ?? ''}
-        destinationLabel={trashDestination(accounts, mailboxQueries, pendingDelete)}
+        destinationLabel={pendingDestination.label}
+        destinationKnown={pendingDestination.known}
         keepConfirm={keepDeleteConfirm}
         busy={deleteMutation.isPending}
         onKeepConfirmChange={setKeepDeleteConfirm}

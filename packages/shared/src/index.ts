@@ -111,6 +111,13 @@ export interface AddressDto {
   address: string
 }
 
+/** A recipient learned from sent or received mail, used by composer autocomplete. */
+export interface ContactDto {
+  email: string
+  name: string
+  lastUsed: string
+}
+
 export interface AttachmentDto {
   index: number
   filename: string

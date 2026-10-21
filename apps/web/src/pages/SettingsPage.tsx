@@ -547,7 +547,7 @@ export function SettingsPage() {
           <div className="settings-card__head">
             <div>
               <h2>本次会话</h2>
-              <p>这里的开关只影响当前浏览器会话，刷新页面后恢复默认。</p>
+              <p>这里的开关只影响当前浏览器会话，关闭标签页后恢复默认。</p>
             </div>
             <span className="badge">临时</span>
           </div>
@@ -556,7 +556,7 @@ export function SettingsPage() {
               <span className="switch-row__text">
                 <strong>删除邮件前二次确认</strong>
                 <small>
-                  关闭后，删除会立即执行，不再弹出确认框。也可以在删除确认框里取消勾选。
+                  关闭后，删除会立即执行，不再弹出确认框；也可以在删除确认框里取消勾选。
                 </small>
               </span>
               <input

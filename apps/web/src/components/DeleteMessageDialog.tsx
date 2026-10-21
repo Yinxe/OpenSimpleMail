@@ -9,6 +9,8 @@ interface DeleteMessageDialogProps {
   sender: string
   /** Human-readable trash folder name, or null when the delete is permanent. */
   destinationLabel: string | null
+  /** False while the folder list is still loading, so the copy stays neutral. */
+  destinationKnown: boolean
   keepConfirm: boolean
   busy: boolean
   onKeepConfirmChange: (value: boolean) => void
@@ -21,6 +23,7 @@ export function DeleteMessageDialog({
   subject,
   sender,
   destinationLabel,
+  destinationKnown,
   keepConfirm,
   busy,
   onKeepConfirmChange,
@@ -33,13 +36,17 @@ export function DeleteMessageDialog({
     if (open) cancelRef.current?.focus()
   }, [open])
 
+  const subtitle = !destinationKnown
+    ? '删除后会从当前列表移除'
+    : destinationLabel
+      ? `将移动到「${destinationLabel}」`
+      : '这封邮件将被永久删除，无法恢复'
+
   return (
     <Modal
       open={open}
       title="删除这封邮件？"
-      subtitle={
-        destinationLabel ? `将移动到「${destinationLabel}」` : '这封邮件将被永久删除，无法恢复'
-      }
+      subtitle={subtitle}
       onClose={onCancel}
       footer={
         <div className="dialog-actions">
@@ -75,9 +82,11 @@ export function DeleteMessageDialog({
       </div>
 
       <p className="delete-note">
-        {destinationLabel
-          ? `邮件会保留在「${destinationLabel}」中，需要时可以再找回。`
-          : '当前文件夹没有可用的废纸篓，删除后无法恢复。'}
+        {!destinationKnown
+          ? '如果服务器提供废纸篓，删除后可以在那里找回。'
+          : destinationLabel
+            ? `邮件会保留在「${destinationLabel}」中，需要时可以再找回。`
+            : '当前文件夹没有可用的废纸篓，删除后无法恢复。'}
       </p>
 
       <label className="check delete-remember">
@@ -89,7 +98,7 @@ export function DeleteMessageDialog({
         <span>本会话内，后续删除也需要二次确认</span>
       </label>
       <p className="delete-hint">
-        取消勾选后，后续删除会直接执行。此设置仅在当前会话生效，刷新页面或在设置中可恢复。
+        取消勾选后，后续删除会直接执行。仅在当前浏览器会话生效，关闭标签页后恢复；也可以在设置中随时改回来。
       </p>
     </Modal>
   )

@@ -7,6 +7,7 @@ import { type ComposeMode, clearDraft, composeDraftKey, loadDraft, saveDraft } f
 import { addressLine, displayAddress, formatBytes, formatFullDate, previewText } from '@/lib/format'
 import { useToast } from '@/lib/toast'
 import { Modal } from './Modal'
+import { RecipientInput } from './RecipientInput'
 import { Spinner } from './Spinner'
 
 interface ComposerProps {
@@ -474,13 +475,12 @@ export function Composer({
           <label className="composer__label" htmlFor="compose-to">
             收件人
           </label>
-          <input
+          <RecipientInput
             id="compose-to"
-            className="composer__input"
             value={to}
-            onChange={(event) => {
+            onChange={(next) => {
               dirtyRef.current = true
-              setTo(event.target.value)
+              setTo(next)
             }}
             placeholder="name@example.com，多个地址用逗号分隔"
             disabled={sending}
@@ -500,13 +500,12 @@ export function Composer({
               <label className="composer__label" htmlFor="compose-cc">
                 抄送
               </label>
-              <input
+              <RecipientInput
                 id="compose-cc"
-                className="composer__input"
                 value={cc}
-                onChange={(event) => {
+                onChange={(next) => {
                   dirtyRef.current = true
-                  setCc(event.target.value)
+                  setCc(next)
                 }}
                 placeholder="可选"
                 disabled={sending}
@@ -516,13 +515,12 @@ export function Composer({
               <label className="composer__label" htmlFor="compose-bcc">
                 密送
               </label>
-              <input
+              <RecipientInput
                 id="compose-bcc"
-                className="composer__input"
                 value={bcc}
-                onChange={(event) => {
+                onChange={(next) => {
                   dirtyRef.current = true
-                  setBcc(event.target.value)
+                  setBcc(next)
                 }}
                 placeholder="可选"
                 disabled={sending}

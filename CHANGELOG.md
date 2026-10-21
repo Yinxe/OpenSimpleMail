@@ -11,9 +11,14 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 - Listen for `ImapFlow` connection-level `error` events, so an idle socket timeout or dropped IMAP connection no longer terminates the Node process.
 - Retry a failed IMAP operation once on a fresh connection, and use portable `LIST` + `STATUS` folder counting for providers such as QQ Mail that close the connection on `LIST-STATUS`.
 - Raise the IMAP socket timeout above the pool idle-close interval to avoid tearing down healthy idle connections.
+- Pre-bundle the CommonJS `@osm/shared` workspace package for Vite, so its named exports resolve in development again.
 
 ### Added
 
+- Recipient autocomplete in the composer: addresses are learned from sent mail and opened messages, suggestions follow the token after the last comma/semicolon, and can be picked with the mouse or arrow keys + Enter.
+- Reader rendering modes: full HTML, simplified text (images and styling removed, paragraphs/lists/links kept) and a verification-code view; the choice is remembered per browser.
+- Verification-code extraction from the message subject, text part and rendered HTML, with one-click copy, expiry hints, alternative candidates and a fallback to the original message when nothing is found.
+- A seeded verification-code email in the demo workspace, so the new reader mode can be tried without a real mailbox.
 - Per-account plain-text signature, editable in the account dialog and inserted below the caret for new mail or above the quote for replies and forwards.
 - Starred view (收藏): a virtual mailbox that aggregates `\Flagged` messages across folders, uses the provider's own `\Flagged` folder when it exists, keeps search scoped to flagged mail, and returns each message's real folder so open/star/delete work from the merged list.
 - Sidebar starred entry with a count when the provider exposes a `\Flagged` folder.

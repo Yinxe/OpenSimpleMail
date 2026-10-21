@@ -98,7 +98,7 @@ async function parseMessage(key: string, source: Buffer): Promise<ParsedMail> {
 // The starred view merges SEARCH results from several folders. Cache the
 // merged summaries briefly so pagination and auto-refresh do not re-run a
 // search against every folder on each keystroke.
-const STARRED_CACHE_TTL_MS = 60 * 1000
+const STARRED_CACHE_TTL_MS = 2 * 60 * 1000
 const STARRED_CACHE_MAX_ENTRIES = 24
 const STARRED_MAX_PER_FOLDER = 200
 const STARRED_MAX_TOTAL = 500

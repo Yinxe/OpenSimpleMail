@@ -255,7 +255,13 @@ function VerificationBody({
     )
   }
 
-  const alternatives = result.candidates.filter((candidate) => candidate.code !== code).slice(0, 3)
+  const primaryScore = result.candidates[0]?.score ?? 0
+  const alternatives = result.candidates
+    .filter(
+      (candidate) =>
+        candidate.code !== code && candidate.score >= 12 && candidate.score >= primaryScore - 2.5,
+    )
+    .slice(0, 3)
 
   return (
     <div className="otp">

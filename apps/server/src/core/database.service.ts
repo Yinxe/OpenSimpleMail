@@ -64,6 +64,15 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   updated_at         TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS contacts (
+  user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email     TEXT NOT NULL,
+  name      TEXT NOT NULL DEFAULT '',
+  last_used TEXT NOT NULL,
+  PRIMARY KEY (user_id, email)
+);
+CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(user_id, last_used DESC);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   id                   INTEGER PRIMARY KEY CHECK (id = 1),
   site_name            TEXT NOT NULL DEFAULT 'OpenSimpleMail',
