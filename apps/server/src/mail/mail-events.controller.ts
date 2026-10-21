@@ -16,12 +16,13 @@ export class MailEventsController {
    * request, so the browser can use a plain EventSource.
    *
    * The stream is one-way, so the only evidence that a tab is still there is the
-   * socket. Nest disables its idle timeout for SSE and only notices a disconnect
-   * when a write fails, which on a laptop that went to sleep can take the TCP
-   * retransmission budget. Asking the kernel to probe every 30 seconds (plus a
-   * 30-second interval, so roughly a minute) closes that gap without a client
-   * heartbeat. Nest's SseStream later calls `setKeepAlive(true)` without a delay,
-   * which leaves this interval alone.
+   * socket, and Nest turns off the idle timeout for SSE. Keepalive covers the
+   * case where the stream goes quiet: without it the kernel would not probe a
+   * half-open connection for two hours. It does not make a dead peer show up
+   * faster while the 25-second ping keeps flowing, because every write resets the
+   * timer — what ends that connection is the retransmission budget instead (about
+   * 15 minutes with the default tcp_retries2=15). Nest's SseStream later calls
+   * `setKeepAlive(true)` without a delay, which leaves this interval alone.
    */
   @Sse()
   stream(@CurrentUser('id') userId: string, @Req() request: Request): Observable<MessageEvent> {
