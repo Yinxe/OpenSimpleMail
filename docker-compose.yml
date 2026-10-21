@@ -14,6 +14,8 @@ services:
       PORT: 4000
       DATABASE_PATH: /app/data/open-simple-mail.db
     volumes:
+      # The database and the attachment scratch tree both live under /app/data,
+      # so uploads and extracted attachments never need a second volume.
       - open-simple-mail-data:/app/data
 
 volumes:

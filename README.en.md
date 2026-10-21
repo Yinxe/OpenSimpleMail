@@ -15,7 +15,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 - Per-user preferences stored server-side: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
 - Unified inbox across all accounts with real pagination, plus a per-account folder tree
-- Pagination, search, explicit read/unread markers with per-row toggles and one-click "mark all read", batch selection with bulk read/archive/delete, star and delete (moves to the server trash when available)
+- Pagination, search, message previews, explicit read/unread markers with per-row toggles and one-click "mark all read", batch selection with bulk read/archive/delete, star and delete (moves to the server trash when available)
 - Three reader views: full HTML, simplified text (images and styling removed, links kept) and verification code; the choice is remembered per browser
 - Verification-code detection across the subject and body, preserving letter case, with expiry hints and one-click copy; it runs locally in the browser
 - Starred view: flagged mail is collected across folders under "收藏" in the sidebar, where it can be read, un-starred or deleted and searched
@@ -68,7 +68,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Mail data and accounts live in the `open-simple-mail-data` volume.
+Mail data and accounts live in the `open-simple-mail-data` volume. Attachments stay inside it too: outgoing uploads and extracted attachments are written to `data/attachments/` and removed once they are no longer needed, so no extra volume is required.
 
 ## First-run setup and roles
 
@@ -113,7 +113,9 @@ Disabling automatic refresh still leaves window-focus refresh and the manual ref
 | `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite file; relative paths resolve from the repository root, not the cwd |
 | `WEB_ORIGIN` | `http://localhost:5174,http://127.0.0.1:5174` | Allowed browser origins, comma separated |
 | `DEMO_ENABLED` | `true` | Initial demo flag for a fresh database; after setup the value in Settings wins |
-| `MAX_ATTACHMENT_MB` | `25` | Total outgoing attachment limit |
+| `MAX_ATTACHMENT_MB` | `25` | Total outgoing attachment limit; also caps a single uploaded file |
+| `ATTACHMENT_DIR` | `attachments/` beside the database | Scratch space for uploads and the extracted-attachment cache |
+| `ATTACHMENT_CACHE_MB` | `256` | Disk budget for the attachment cache, evicted least-recently-used |
 | `SESSION_DAYS` | `30` | Session lifetime |
 | `COOKIE_SECURE` | `false` | Set to `true` behind HTTPS |
 | `TRUST_PROXY` | `0` | Number of reverse-proxy hops to trust (`1` behind Nginx/Caddy) |

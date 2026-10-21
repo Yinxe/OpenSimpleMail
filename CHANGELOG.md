@@ -26,6 +26,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Message-list previews for real IMAP accounts: the list fetch now includes the first 4 KB of each message, and a lightweight parser extracts the first text part (quoted-printable, base64, multipart or HTML) into a 180-character summary.
 - Unified inbox pagination: `/api/messages/unified` merges each account's INBOX (or starred view) page by page, returns a true total and makes the pager work in the unified view.
 - Touch gestures on the message list: swipe left to archive (or delete when no archive folder exists), swipe right to toggle the star, and pull down at the top to refresh.
 - Expanded keyboard shortcuts (forward, star, read/unread, archive, delete, select, `g i`) and a `?` help overlay, also reachable from a keyboard button in the list header.

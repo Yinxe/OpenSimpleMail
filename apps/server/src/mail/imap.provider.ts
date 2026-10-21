@@ -30,6 +30,7 @@ import {
 } from './message-parser'
 import { sanitizeEmailHtml } from './message-sanitizer'
 import { type ParsedMessageCache, parsedCacheKey } from './parsed-cache'
+import { previewFromSource } from './preview'
 import type { SmtpService } from './smtp.service'
 
 const MAX_MESSAGE_BYTES = 40 * 1024 * 1024
@@ -157,8 +158,13 @@ function hasAttachments(node: MessageStructureObject | undefined): boolean {
   return (node.childNodes ?? []).some(hasAttachments)
 }
 
-function toSummary(message: FetchMessageObject, mailbox?: string): MessageSummaryDto {
+function toSummary(
+  message: FetchMessageObject,
+  mailbox?: string,
+  includePreview = true,
+): MessageSummaryDto {
   const flags = [...(message.flags ?? [])]
+  const preview = includePreview && message.source ? previewFromSource(message.source) : ''
   return {
     uid: message.uid,
     subject: message.envelope?.subject ?? '',
@@ -170,6 +176,7 @@ function toSummary(message: FetchMessageObject, mailbox?: string): MessageSummar
     starred: flags.includes('\\Flagged'),
     hasAttachments: hasAttachments(message.bodyStructure),
     mailbox,
+    ...(preview ? { preview } : {}),
     size: message.size,
   }
 }
@@ -258,6 +265,9 @@ export class ImapProvider implements MailProvider {
           bodyStructure: true,
           internalDate: true,
           size: true,
+          // Enough of the source for a two-line preview without downloading
+          // whole messages just to render the list.
+          source: { start: 0, maxLength: 4096 },
         }
         const emptyPage = (total: number) => ({
           mailbox: options.mailbox,
@@ -649,6 +659,7 @@ export class ImapProvider implements MailProvider {
       bodyStructure: true,
       internalDate: true,
       size: true,
+      source: { start: 0, maxLength: 4096 },
     })) {
       result.push(toSummary(message, mailbox))
     }
@@ -661,7 +672,7 @@ export class ImapProvider implements MailProvider {
     parsed: ParsedMessage,
     mailbox: string,
   ): Promise<MessageDetailDto> {
-    const summary = toSummary(message)
+    const summary = toSummary(message, undefined, false)
     const inlineImages = await this.inlineImages(parsed)
 
     return {
