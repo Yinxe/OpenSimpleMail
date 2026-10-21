@@ -748,15 +748,22 @@ export class ImapProvider implements MailProvider {
     mailbox?: string,
   ): Promise<MessageSummaryDto[]> {
     const result: MessageSummaryDto[] = []
-    for await (const message of client.fetch(uids, {
-      envelope: true,
-      flags: true,
-      uid: true,
-      bodyStructure: true,
-      internalDate: true,
-      size: true,
-      source: { start: 0, maxLength: 4096 },
-    })) {
+    // `uid: true` inside the query only asks for the UID attribute; the UID
+    // *range* needs the option object. Without it IMAP reads these numbers as
+    // sequence numbers, so a search hit list comes back empty (or wrong).
+    for await (const message of client.fetch(
+      uids,
+      {
+        envelope: true,
+        flags: true,
+        uid: true,
+        bodyStructure: true,
+        internalDate: true,
+        size: true,
+        source: { start: 0, maxLength: 4096 },
+      },
+      { uid: true },
+    )) {
       result.push(toSummary(message, mailbox))
     }
     result.sort((a, b) => b.uid - a.uid)

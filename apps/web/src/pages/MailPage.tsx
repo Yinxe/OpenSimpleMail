@@ -1045,6 +1045,8 @@ export function MailPage() {
         : undefined
       : activeAccount?.email
 
+  // Servers without a `\Flagged` folder (QQ Mail, for example) report nothing
+  // here, so the open starred view falls back to the count the list already has.
   const starredCount = useMemo(() => {
     if (accounts.length === 0) return undefined
     const totals = accounts.map(
@@ -1217,7 +1219,7 @@ export function MailPage() {
         activeMailbox={mailboxParam}
         mailboxes={activeMailboxes}
         accountUnread={accountUnread}
-        starredCount={starredCount}
+        starredCount={starredCount ?? (starred ? total : undefined)}
         onSelectAccount={selectAccount}
         onSelectMailbox={selectMailbox}
         onSelectStarred={selectStarred}

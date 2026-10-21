@@ -29,6 +29,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Fixed
 
+- Show the starred messages of a real account: the summary fetch treated search UIDs as sequence numbers, so the starred view (and a folder search with hits) came back empty for IMAP servers such as QQ Mail. `fetch` now passes `{ uid: true }`, and `apps/server/src/mail/imap.starred.spec.ts` covers the merge, the empty mailbox and a `\Flagged` folder.
 - Show "N accounts could not be read" above the unified inbox instead of silently returning fewer messages than the account list suggests.
 - Keep a strong active style on the opened message row, including in the starred view, by matching the message's real folder and using an accent bar instead of a subtle tint.
 - Cache folder counts for 45 seconds and pipeline STATUS requests, so sidebar refresh no longer performs one sequential round-trip per folder.
