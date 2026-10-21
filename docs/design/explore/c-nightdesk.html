@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>夜读台 · OpenSimpleMail</title>
+<style>
+  :root{
+    --bg:#0F1114; --rail:#0A0C0E; --list:#14171B; --hover:#191D23; --selected:#1D2228;
+    --surface:#1B2026; --ink:#E8E5DE; --ink-2:#B0ABA2; --ink-3:#959087;
+    --line:#23272D; --line-2:#2E333A;
+    --amber:#E0A458; --amber-soft:rgba(224,164,88,.13);
+    --paper:#F6F0E2;
+    --sans:"Noto Sans CJK SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:var(--sans);font-size:14px;line-height:1.5;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+  .ic{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+  .app{display:grid;grid-template-columns:64px 420px minmax(0,1fr);height:100vh;overflow:hidden}
+
+  /* icon rail */
+  .rail{background:var(--rail);border-right:1px solid #1A1E23;display:flex;flex-direction:column;align-items:center;padding:16px 0 14px;gap:6px}
+  .rail .mark{width:26px;height:26px;color:var(--ink);margin-bottom:10px}
+  .rail-btn{position:relative;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;color:var(--ink-3)}
+  .rail-btn:hover{background:var(--hover);color:var(--ink)}
+  .rail-btn.is-active{background:#1C2128;color:var(--ink)}
+  .rail .compose{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:11px;background:var(--amber);color:#17130D;margin-bottom:10px;box-shadow:0 6px 16px rgba(224,164,88,.18)}
+  .rail .compose .ic{width:18px;height:18px;stroke-width:1.9}
+  .rail .grow{flex:1}
+  .rail .avatar{width:30px;height:30px;border-radius:50%;background:#2A3038;color:#CFC8BB;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;margin-top:6px}
+  .rail .divider{width:24px;height:1px;background:#1E2329;margin:6px 0}
+
+  /* list */
+  .list{background:var(--list);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .list-head{padding:20px 18px 0;display:flex;align-items:flex-start;gap:8px}
+  .list-head h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
+  .list-head p{margin:4px 0 0;font-size:12px;color:var(--ink-3)}
+  .list-head p b{color:var(--ink-2);font-weight:600}
+  .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;color:var(--ink-3)}
+  .icon-btn:hover{background:var(--hover);color:var(--ink)}
+  .list-head .icon-btn{margin-left:auto}
+
+  .search{display:flex;align-items:center;gap:8px;height:32px;margin:14px 18px 12px;padding:0 10px;border:1px solid var(--line-2);border-radius:8px;background:#181C21}
+  .search .ic{width:14px;height:14px;color:var(--ink-3)}
+  .search input{flex:1;min-width:0;border:0;outline:0;background:none;font:inherit;font-size:12.5px;color:var(--ink)}
+  .search input::placeholder{color:var(--ink-3)}
+  .search kbd{font-family:var(--mono);font-size:10px;color:var(--ink-3);border:1px solid var(--line-2);border-radius:4px;padding:1px 5px}
+
+  .rows{flex:1;overflow-y:auto;min-height:0}
+  .row{display:grid;grid-template-columns:12px minmax(0,1fr);gap:8px;width:100%;padding:9px 16px 10px 14px;text-align:left;border-bottom:1px solid #1B1F25}
+  .row:hover{background:var(--hover)}
+  .row.is-selected{background:#232A32;box-shadow:inset 0 0 0 1px #39424C}
+  .row .mark{width:6px;height:6px;border-radius:50%;margin-top:9px;background:transparent}
+  .row.is-unread .mark{background:var(--amber)}
+  .row .l1{display:flex;align-items:baseline;gap:8px;min-width:0}
+  .sender{font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row.is-unread .sender{color:var(--ink-2)}
+  .date{margin-left:auto;flex:none;font-family:var(--mono);font-size:12px;letter-spacing:.02em;color:var(--ink-3)}
+  .subject{display:block;margin-top:1px;font-size:14px;font-weight:500;line-height:1.4;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row.is-unread .subject{color:var(--ink);font-weight:600}
+  .preview{display:block;margin-top:1px;font-size:13px;line-height:1.45;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .star{color:var(--amber);display:inline-flex;vertical-align:-1px;margin-left:5px}
+  .star .ic{width:12px;height:12px;fill:currentColor;stroke:currentColor}
+  .paperclip{color:var(--ink-3);display:inline-flex;vertical-align:-2px;margin-left:5px}
+  .paperclip .ic{width:12px;height:12px}
+  .acct{display:inline-block;width:4px;height:4px;border-radius:50%;background:#6E8A7E;margin-right:6px;vertical-align:1px}
+
+  .list-foot{display:flex;align-items:center;justify-content:space-between;padding:7px 18px;border-top:1px solid var(--line);font-size:11px;color:var(--ink-3)}
+  .list-foot .pager{display:flex;gap:1px}
+
+  /* reader */
+  .reader{position:relative;background:var(--bg);display:flex;flex-direction:column;min-width:0;min-height:0}
+  .reader::before{content:"";position:absolute;inset:0 0 auto;height:280px;background:radial-gradient(560px 220px at 50% 0,rgba(224,164,88,.09),transparent 72%);pointer-events:none}
+  .reader-bar{position:relative;display:flex;align-items:center;gap:2px;height:52px;padding:0 12px;border-bottom:1px solid #1B1F25;flex:none}
+  .reader-bar .sep{width:1px;height:16px;background:var(--line-2);margin:0 6px}
+  .reader-bar .spacer{flex:1}
+  .reader-bar .label{font-size:11px;color:var(--ink-3);margin-right:2px}
+  .reader-scroll{position:relative;flex:1;overflow-y:auto;min-height:0;padding:18px 26px 24px;display:flex;flex-direction:column}
+  .sheet{flex:1;max-width:760px;width:100%;margin:0 auto;display:flex;flex-direction:column;background:var(--paper);border-radius:8px;box-shadow:0 26px 64px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.07);padding:36px 46px 28px}
+  .sheet h2{margin:0;font-size:25px;line-height:1.4;font-weight:600;letter-spacing:-.012em;color:#1B1A17;overflow-wrap:anywhere}
+  .meta{display:flex;align-items:flex-start;gap:10px;margin-top:16px;padding-bottom:16px;border-bottom:1px solid #E7E0D2}
+  .avatar{width:34px;height:34px;border-radius:50%;background:#EDE6D7;color:#6B5F4B;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600;flex:none}
+  .meta .who{flex:1;min-width:0}
+  .meta .from{font-size:13px;font-weight:600;color:#2A2823}
+  .meta .addr{font-size:11.5px;color:#6F695F;margin-left:4px}
+  .meta .to{margin-top:2px;font-size:11px;color:#6F695F}
+  .meta time{flex:none;font-family:var(--mono);font-size:10.5px;color:#6F695F;padding-top:3px}
+  .body{margin-top:20px;font-size:15px;line-height:1.78;color:#2A2823}
+  .body p{margin:0 0 14px}
+  .body p:last-child{margin-bottom:0}
+  .attach{display:flex;align-items:center;gap:10px;margin-top:22px;padding:9px 11px;border:1px solid #E7E0D2;border-radius:8px;background:#F7F2E7}
+  .attach .file{width:30px;height:30px;border-radius:7px;background:#EDE6D7;color:#7A5C2C;display:flex;align-items:center;justify-content:center;flex:none}
+  .attach .info{display:flex;flex-direction:column;line-height:1.35;min-width:0}
+  .attach .info b{font-size:12.5px;font-weight:600;color:#2A2823}
+  .attach .info small{font-size:10.5px;color:#6F695F}
+  .attach .icon-btn{margin-left:auto;color:#6F695F}
+  .reply{display:flex;align-items:center;gap:8px;margin-top:26px;padding-top:18px;border-top:1px solid #E7E0D2}
+  .reply .field{flex:1;height:40px;display:flex;align-items:center;padding:0 14px;border:1px solid #DCD3C1;border-radius:8px;background:#F7F2E7;color:#6F695F;font-size:13px}
+  .send{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 15px;border-radius:8px;background:var(--amber);color:#1A1509;font-size:13px;font-weight:600}
+  .send .ic{width:15px;height:15px}
+
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#2C3138;border:2px solid transparent;background-clip:content-box;border-radius:99px}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1Z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><path d="M3 4h18v4H3z"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-reply" viewBox="0 0 24 24"><path d="M9 17l-5-5 5-5"/><path d="M4 12h11a5 5 0 0 1 5 5v2"/></symbol>
+  <symbol id="i-forward" viewBox="0 0 24 24"><path d="M15 17l5-5-5-5"/><path d="M20 12H9a5 5 0 0 0-5 5v2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+  <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.4 11-9.2 9.2a6 6 0 0 1-8.5-8.5l8.6-8.6A4 4 0 1 1 18 8.8l-8.6 8.6a2 2 0 0 1-2.8-2.8l8.5-8.5"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="rail">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="currentColor" opacity=".08"/><rect x="6.5" y="9.5" width="19" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 11l8.5 6.5L24.5 11" fill="none" stroke="var(--amber)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+
+    <button class="compose" aria-label="写邮件"><svg class="ic"><use href="#i-pen"/></svg></button>
+    <button class="rail-btn is-active" aria-label="收件箱"><svg class="ic"><use href="#i-inbox"/></svg></button>
+    <button class="rail-btn" aria-label="星标邮件"><svg class="ic"><use href="#i-star"/></svg></button>
+    <button class="rail-btn" aria-label="归档"><svg class="ic"><use href="#i-archive"/></svg></button>
+    <button class="rail-btn" aria-label="已发送"><svg class="ic"><use href="#i-send"/></svg></button>
+
+    <span class="grow"></span>
+    <button class="rail-btn" aria-label="设置"><svg class="ic"><use href="#i-settings"/></svg></button>
+    <button class="rail-btn" aria-label="切换主题"><svg class="ic"><use href="#i-moon"/></svg></button>
+    <span class="divider"></span>
+    <span class="avatar">演</span>
+  </aside>
+
+  <section class="list">
+    <header class="list-head">
+      <div>
+        <h1>全部收件箱</h1>
+        <p><b>7</b> 封未读 · 15 封邮件</p>
+      </div>
+      <button class="icon-btn" aria-label="刷新"><svg class="ic"><use href="#i-refresh"/></svg></button>
+    </header>
+
+    <div class="search">
+      <svg class="ic"><use href="#i-search"/></svg>
+      <input placeholder="搜索邮件" aria-label="搜索邮件" />
+      <kbd>/</kbd>
+    </div>
+
+    <div class="rows">
+      <button class="row is-unread">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender">GitHub</span><span class="date">08:42</span></span>
+          <span class="subject">[open-simple-mail] 你的第一个 Issue 已创建</span>
+          <span class="preview">Yinxin commented on issue #12：多账号统一收件箱的合并排序</span>
+        </span>
+      </button>
+
+      <button class="row is-unread is-selected">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender"><span class="acct"></span>王小明</span><span class="date">08:12</span></span>
+          <span class="subject">Q4 规划文档，周五前帮忙看一下</span>
+          <span class="preview">我把产品部分先写完了，剩下增长和基础设施两节空着…</span>
+        </span>
+      </button>
+
+      <button class="row">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender">Stripe</span><span class="date">昨天</span></span>
+          <span class="subject">打款成功：¥2,480.00 已到账</span>
+          <span class="preview">款项已汇入你尾号 4821 的账户，预计 1–2 个工作日到账。<span class="paperclip"><svg class="ic"><use href="#i-paperclip"/></svg></span></span>
+        </span>
+      </button>
+
+      <button class="row">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender">Figma</span><span class="date">昨天</span></span>
+          <span class="subject">你被邀请加入「OpenSimpleMail 设计系统」</span>
+          <span class="preview">Lena 邀请你协作编辑这个文件，权限为可编辑。</span>
+        </span>
+      </button>
+
+      <button class="row">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender"><span class="acct"></span>Linear</span><span class="date">10/19</span></span>
+          <span class="subject">每周摘要：本周关闭 14 个 issue</span>
+          <span class="preview">OSM-231 修复了移动端阅读器的滚动错位，OSM-228 已完成…</span>
+        </span>
+      </button>
+
+      <button class="row is-unread">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender">Vercel</span><span class="date">10/19</span></span>
+          <span class="subject">部署失败：open-simple-mail（production）</span>
+          <span class="preview">构建在 npm run build -w @osm/web 这一步失败，请查看日志。</span>
+        </span>
+      </button>
+
+      <button class="row">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender"><span class="acct"></span>Notion</span><span class="date">10/18</span></span>
+          <span class="subject">「自托管部署笔记」有 3 处更新<span class="star"><svg class="ic"><use href="#i-star"/></svg></span></span>
+          <span class="preview">Yinxin 修改了 Docker 卷映射一节，并新增备份脚本说明。</span>
+        </span>
+      </button>
+
+      <button class="row">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender">支付宝</span><span class="date">10/17</span></span>
+          <span class="subject">10 月账单已生成</span>
+          <span class="preview">本期支出 ¥3,120.40，较上月减少 8%，点击查看明细。</span>
+        </span>
+      </button>
+
+      <button class="row">
+        <span class="mark"></span>
+        <span>
+          <span class="l1"><span class="sender"><span class="acct"></span>李工</span><span class="date">10/16</span></span>
+          <span class="subject">服务器迁移窗口确认</span>
+          <span class="preview">周六凌晨 2:00–4:00，先把数据库快照做出来，再切流量。</span>
+        </span>
+      </button>
+    </div>
+
+    <footer class="list-foot">
+      <span>第 1 页 · 共 15 封</span>
+      <span class="pager">
+        <button class="icon-btn" aria-label="上一页"><svg class="ic"><use href="#i-chevron-left"/></svg></button>
+        <button class="icon-btn" aria-label="下一页"><svg class="ic"><use href="#i-chevron-right"/></svg></button>
+      </span>
+    </footer>
+  </section>
+
+  <main class="reader">
+    <div class="reader-bar">
+      <button class="icon-btn" aria-label="回复"><svg class="ic"><use href="#i-reply"/></svg></button>
+      <button class="icon-btn" aria-label="转发"><svg class="ic"><use href="#i-forward"/></svg></button>
+      <span class="sep"></span>
+      <button class="icon-btn" aria-label="归档"><svg class="ic"><use href="#i-archive"/></svg></button>
+      <button class="icon-btn" aria-label="删除"><svg class="ic"><use href="#i-trash"/></svg></button>
+      <button class="icon-btn" aria-label="加星标"><svg class="ic"><use href="#i-star"/></svg></button>
+      <span class="spacer"></span>
+      <span class="label">全部收件箱 / 王小明</span>
+      <button class="icon-btn" aria-label="更多"><svg class="ic"><use href="#i-more"/></svg></button>
+      <button class="icon-btn" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+
+    <div class="reader-scroll">
+      <article class="sheet">
+        <h2>Q4 规划文档，周五前帮忙看一下</h2>
+
+        <div class="meta">
+          <span class="avatar">王</span>
+          <div class="who">
+            <div><span class="from">王小明</span><span class="addr">&lt;xiaoming@studio.example&gt;</span></div>
+            <div class="to">收件人：我</div>
+          </div>
+          <time>2026-10-21 08:12</time>
+        </div>
+
+        <div class="body">
+          <p>早上好，</p>
+          <p>Q4 的规划文档我先把产品部分写完了，剩下「增长」和「基础设施」两节还空着。你更熟悉部署和迁移那一摊事，能不能在周五前补上？不用写长，把风险和排期讲清楚就行。</p>
+          <p>附件里是初稿，直接在文档里改也可以。周四下午我们碰一次，把有分歧的地方过一遍。</p>
+          <p>王小明</p>
+        </div>
+
+        <div class="attach">
+          <span class="file"><svg class="ic"><use href="#i-file"/></svg></span>
+          <span class="info"><b>Q4-规划-初稿.docx</b><small>42 KB · Word 文档</small></span>
+          <button class="icon-btn" aria-label="下载"><svg class="ic"><use href="#i-forward"/></svg></button>
+        </div>
+
+        <div class="reply">
+          <span class="field">回复 王小明…</span>
+          <button class="send"><svg class="ic"><use href="#i-send"/></svg>发送</button>
+        </div>
+      </article>
+    </div>
+  </main>
+</div>
+</body>
+</html>
