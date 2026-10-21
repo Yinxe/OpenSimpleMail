@@ -27,6 +27,8 @@
   --teal: #0f766e;
   --danger: #b42318;
   --danger-soft: #fbe9e7;
+  --warning: #b45309;
+  --warning-soft: #fdf0d5;
   --star: #c98a12;
 
   --sidebar-bg: #191713;
@@ -68,6 +70,8 @@
   --teal: #5eead4;
   --danger: #f97066;
   --danger-soft: #3a1f1c;
+  --warning: #fbbf24;
+  --warning-soft: #3a2c10;
   --star: #e5b04b;
 
   --sidebar-bg: #0c0b09;
@@ -1829,6 +1833,22 @@ code {
   background: var(--bg-elevated);
   color: var(--danger);
   font-size: 12px;
+}
+.mail-list__warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--warning);
+  font-size: 12px;
+}
+.mail-list__warning span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mail-list__error-banner span {
   min-width: 0;

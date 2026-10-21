@@ -17,6 +17,8 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Fixed
 
+- Show "N accounts could not be read" above the unified inbox instead of silently returning fewer messages than the account list suggests.
+
 - Keep a strong active style on the opened message row, including in the starred view, by matching the message's real folder and using an accent bar instead of a subtle tint.
 - Cache folder counts for 45 seconds and pipeline STATUS requests, so sidebar refresh no longer performs one sequential round-trip per folder.
 - Show an explicit error state with retry in the message list instead of rendering an IMAP failure as "no messages".

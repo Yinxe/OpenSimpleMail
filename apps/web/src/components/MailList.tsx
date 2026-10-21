@@ -72,6 +72,8 @@ interface MailListProps {
   onShowHelp: () => void
   refreshHint?: string
   error?: string | null
+  /** Non-fatal notice, e.g. some accounts could not be read in the unified view. */
+  warning?: string | null
   onRetry: () => void
   onMenu?: () => void
   emptyTitle?: string
@@ -140,6 +142,7 @@ export function MailList({
   onShowHelp,
   refreshHint,
   error,
+  warning,
   onRetry,
   onMenu,
   emptyTitle,
@@ -332,6 +335,13 @@ export function MailList({
           </div>
         ) : null}
         {loading ? <SkeletonRows /> : null}
+
+        {!loading && warning && !error ? (
+          <div className="mail-list__warning" role="status">
+            <AlertTriangle size={14} />
+            <span>{warning}</span>
+          </div>
+        ) : null}
 
         {!loading && error && items.length > 0 ? (
           <div className="mail-list__error-banner" role="alert">

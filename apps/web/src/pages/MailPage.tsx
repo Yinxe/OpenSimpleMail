@@ -315,6 +315,9 @@ export function MailPage() {
   const total = unified ? (unifiedQuery.data?.total ?? 0) : (messagesQuery.data?.total ?? 0)
 
   const listError = unified ? (unifiedQuery.error ?? null) : (messagesQuery.error ?? null)
+  const failedAccounts = unified ? (unifiedQuery.data?.failedAccounts ?? 0) : 0
+  const listWarning =
+    failedAccounts > 0 ? `${failedAccounts} 个账户暂时无法读取，这个列表可能不完整` : null
 
   function retryList() {
     if (unified) {
@@ -1314,6 +1317,7 @@ export function MailPage() {
             canMarkAllRead={canMarkAllRead}
             onShowHelp={() => setHelpOpen(true)}
             error={listError ? errorMessage(listError) : null}
+            warning={listWarning}
             onRetry={retryList}
             refreshHint={
               preferences.refreshSeconds > 0
