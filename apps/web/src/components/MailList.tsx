@@ -528,7 +528,9 @@ export function MailList({
                           : t('mail.row.star')}
                     </span>
                   ) : null}
-                  {/* A label so the whole 40px slot toggles the checkbox on touch. */}
+                  {/* A label so the whole 40px slot toggles the checkbox on touch; the
+                      input inside it is the keyboard target, so the label needs no key handler. */}
+                  {/* biome-ignore lint/a11y/useKeyWithClickEvents: the nested checkbox is focusable */}
                   <label className="mail-row__check" onClick={(event) => event.stopPropagation()}>
                     <input
                       type="checkbox"
