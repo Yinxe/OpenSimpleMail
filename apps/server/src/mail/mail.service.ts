@@ -133,6 +133,11 @@ export class MailService {
     await this.run(() => provider.setFlags(mailbox, uid, flags), '无法更新邮件状态')
   }
 
+  async markMailboxRead(userId: string, accountId: string, mailbox: string): Promise<void> {
+    const provider = await this.provider(userId, accountId)
+    await this.run(() => provider.markMailboxRead(mailbox), '无法将邮件标为已读')
+  }
+
   async move(
     userId: string,
     accountId: string,

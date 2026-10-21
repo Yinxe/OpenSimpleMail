@@ -485,6 +485,38 @@ export function MailPage() {
     onError: (error) => toast.error('归档失败', errorMessage(error)),
   })
 
+  const markAllReadMutation = useMutation({
+    mutationFn: async (targets: { accountId: string; mailbox: string }[]) => {
+      await Promise.all(
+        targets.map((target) =>
+          api.post(`/accounts/${target.accountId}/mailboxes/read`, {
+            mailbox: target.mailbox,
+          }),
+        ),
+      )
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+      toast.success('已全部标为已读')
+    },
+    onError: (error) => {
+      toast.error('标记失败', errorMessage(error))
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
+    },
+  })
+
+  function markAllRead() {
+    if (starred) return
+    const targets = unified
+      ? accounts.map((account) => ({ accountId: account.id, mailbox: DEFAULT_MAILBOX }))
+      : activeAccount
+        ? [{ accountId: activeAccount.id, mailbox: mailboxParam }]
+        : []
+    if (targets.length > 0) markAllReadMutation.mutate(targets)
+  }
+
   function selectAccount(accountId: string | null) {
     setSidebarOpen(false)
     update({
@@ -679,8 +711,15 @@ export function MailPage() {
   }, [accounts, mailboxQueries])
 
   const selectedKey = uidParam
-    ? `${unified ? (openAccountParam ?? 'all') : accountParam}:${detailMailbox}:${uidParam}`
+    ? `${unified ? (openAccountParam ?? 'all') : accountParam}:${
+        detailQuery.data?.uid === uidParam ? detailQuery.data.mailbox : detailMailbox
+      }:${uidParam}`
     : null
+
+  const unreadCount = unified
+    ? accounts.reduce((sum, account) => sum + (accountUnread[account.id] ?? 0), 0)
+    : (currentMailbox?.unread ?? 0)
+  const canMarkAllRead = !starred && (unified ? accounts.length > 0 : Boolean(activeAccount))
 
   useEffect(() => {
     const subject = detailQuery.data?.subject?.trim()
@@ -834,6 +873,11 @@ export function MailPage() {
               if (!accountId) return
               starMessage(item, accountId, mailboxOf(item))
             }}
+            onToggleRead={(item) => {
+              const accountId = item.accountId ?? activeAccount?.id
+              if (!accountId) return
+              toggleRead(item, accountId, mailboxOf(item))
+            }}
             onDelete={(item) => {
               const accountId = item.accountId ?? activeAccount?.id
               if (!accountId) return
@@ -841,6 +885,10 @@ export function MailPage() {
             }}
             onPage={(nextPage) => update({ page: String(nextPage), uid: null })}
             onRefresh={refresh}
+            unreadCount={unreadCount}
+            onMarkAllRead={markAllRead}
+            markingAllRead={markAllReadMutation.isPending}
+            canMarkAllRead={canMarkAllRead}
             error={listError ? errorMessage(listError) : null}
             onRetry={retryList}
             refreshHint={

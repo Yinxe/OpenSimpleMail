@@ -520,6 +520,22 @@ export class ImapProvider implements MailProvider {
     if (flags.seen !== undefined) dropMailboxCache(this.creds.accountId)
   }
 
+  async markMailboxRead(mailbox: string): Promise<void> {
+    await this.pool.withClient(this.creds, async (client) => {
+      const lock = await client.getMailboxLock(mailbox)
+      try {
+        // Sequence range: every message currently in the selected mailbox.
+        if (client.mailbox && client.mailbox.exists > 0) {
+          await client.messageFlagsAdd('1:*', ['\\Seen'])
+        }
+      } finally {
+        lock.release()
+      }
+    })
+    dropMailboxCache(this.creds.accountId)
+    dropStarredCache(this.creds.accountId)
+  }
+
   async move(mailbox: string, uid: number, destination: string): Promise<void> {
     await this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)

@@ -291,6 +291,8 @@ function VerificationBody({
           {copied === code ? '已复制' : '复制验证码'}
         </button>
 
+        {/[A-Za-z]/.test(code) ? <p className="otp__case">含字母，复制时请区分大小写</p> : null}
+
         {result.context ? <p className="otp__context">{result.context}</p> : null}
 
         <div className="otp__foot">
@@ -412,12 +414,15 @@ export function MessageReader({
     ? `/api/accounts/${account.id}/messages/${message.uid}/attachments`
     : ''
 
+  const codeScore = codeResult.candidates[0]?.score ?? 0
   const modeHint =
     mode === 'text'
       ? '已去除图片与样式'
       : mode === 'code'
         ? codeResult.code
-          ? '已自动识别'
+          ? codeScore >= 12
+            ? '已自动识别'
+            : '已识别，请核对'
           : '未识别到验证码'
         : ''
 
@@ -545,6 +550,7 @@ export function MessageReader({
                     key={item.value}
                     type="button"
                     role="tab"
+                    id={`reader-tab-${item.value}`}
                     aria-selected={mode === item.value}
                     aria-controls="reader-body"
                     className={`reader-mode ${mode === item.value ? 'is-active' : ''}`}
@@ -553,7 +559,10 @@ export function MessageReader({
                     <Icon size={14} aria-hidden="true" />
                     <span>{item.label}</span>
                     {item.value === 'code' && codeResult.code ? (
-                      <span className="reader-mode__dot" title="已识别到验证码" />
+                      <>
+                        <span className="reader-mode__dot" aria-hidden="true" />
+                        <span className="sr-only">已识别到验证码</span>
+                      </>
                     ) : null}
                   </button>
                 )
@@ -605,7 +614,12 @@ export function MessageReader({
             </div>
           ) : null}
 
-          <div id="reader-body" role="tabpanel">
+          <div
+            id="reader-body"
+            role="tabpanel"
+            aria-labelledby={`reader-tab-${mode}`}
+            tabIndex={0}
+          >
             {mode === 'full' ? (
               message.html ? (
                 <EmailFrame html={message.html} allowImages={allowImages} />

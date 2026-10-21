@@ -90,6 +90,16 @@ export class MailController {
     return new StreamableFile(file.content)
   }
 
+  @Post('mailboxes/read')
+  @HttpCode(204)
+  async markMailboxRead(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Body() body: MailboxQueryDto,
+  ): Promise<void> {
+    await this.mail.markMailboxRead(userId, accountId, body.mailbox)
+  }
+
   @Post('messages/:uid/flags')
   @HttpCode(204)
   async flags(

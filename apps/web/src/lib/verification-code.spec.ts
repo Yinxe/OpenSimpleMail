@@ -53,6 +53,18 @@ describe('findVerificationCode', () => {
     expect(result.code).toBe('090b51')
   })
 
+  it('keeps the subject casing when there is no body code', () => {
+    expect(find({ subject: '验证码 090b51' }).code).toBe('090b51')
+  })
+
+  it('rejects a username near the keyword', () => {
+    const result = find({
+      text: '账户 Yinx1423 的登录验证码是 811818，15 分钟内有效。',
+    })
+    expect(result.code).toBe('811818')
+    expect(result.candidates.map((candidate) => candidate.code)).not.toContain('Yinx1423')
+  })
+
   it('rejects a recipient name in the salutation', () => {
     const result = find({
       subject: '您的验证码',

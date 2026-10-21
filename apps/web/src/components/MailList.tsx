@@ -1,10 +1,14 @@
 import type { MessageSummaryDto } from '@osm/shared'
 import {
   AlertTriangle,
+  Check,
   ChevronLeft,
   ChevronRight,
   Inbox,
   Loader2,
+  Mail,
+  MailCheck,
+  MailOpen,
   Menu,
   Paperclip,
   RefreshCw,
@@ -39,9 +43,14 @@ interface MailListProps {
   onSearchChange: (value: string) => void
   onSelect: (item: MailListItem) => void
   onStar: (item: MailListItem) => void
+  onToggleRead: (item: MailListItem) => void
   onDelete: (item: MailListItem) => void
   onPage: (page: number) => void
   onRefresh: () => void
+  unreadCount: number
+  onMarkAllRead: () => void
+  markingAllRead: boolean
+  canMarkAllRead: boolean
   refreshHint?: string
   error?: string | null
   onRetry: () => void
@@ -89,9 +98,14 @@ export function MailList({
   onSearchChange,
   onSelect,
   onStar,
+  onToggleRead,
   onDelete,
   onPage,
   onRefresh,
+  unreadCount,
+  onMarkAllRead,
+  markingAllRead,
+  canMarkAllRead,
   refreshHint,
   error,
   onRetry,
@@ -122,6 +136,22 @@ export function MailList({
           </p>
         </div>
         {refreshHint ? <span className="mail-list__refresh-hint">{refreshHint}</span> : null}
+        {canMarkAllRead ? (
+          <button
+            type="button"
+            className="button button--soft button--sm mail-list__mark-read"
+            onClick={onMarkAllRead}
+            disabled={markingAllRead || unreadCount === 0}
+            title="将当前文件夹的全部邮件标为已读"
+          >
+            {markingAllRead ? (
+              <Loader2 size={14} className="is-spinning" />
+            ) : (
+              <MailCheck size={14} />
+            )}
+            <span>{unreadCount > 0 ? `全部已读 ${unreadCount}` : '全部已读'}</span>
+          </button>
+        ) : null}
         <button
           type="button"
           className="icon-button"
@@ -214,6 +244,7 @@ export function MailList({
                   }`}
                   role="button"
                   tabIndex={0}
+                  aria-current={selected ? 'true' : undefined}
                   onClick={() => onSelect(item)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -222,7 +253,12 @@ export function MailList({
                     }
                   }}
                 >
-                  <span className="mail-row__dot" aria-hidden="true" />
+                  <span
+                    className={`mail-row__status ${item.unread ? 'is-unread' : 'is-read'}`}
+                    title={item.unread ? '未读' : '已读'}
+                  >
+                    {item.unread ? <span className="mail-row__dot" /> : <Check size={12} />}
+                  </span>
                   <Avatar
                     name={sender ? displayAddress(sender) : '?'}
                     seed={sender?.address ?? item.subject}
@@ -259,6 +295,18 @@ export function MailList({
                     </div>
                   </div>
                   <div className="mail-row__actions">
+                    <button
+                      type="button"
+                      className="row-action"
+                      title={item.unread ? '标为已读' : '标为未读'}
+                      aria-label={item.unread ? '标为已读' : '标为未读'}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onToggleRead(item)
+                      }}
+                    >
+                      {item.unread ? <MailOpen size={15} /> : <Mail size={15} />}
+                    </button>
                     <button
                       type="button"
                       className={`row-action ${item.starred ? 'is-on' : ''}`}

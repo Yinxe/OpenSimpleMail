@@ -65,7 +65,7 @@ const KEYWORDS: Array<{ pattern: RegExp; weight: number; label: string }> = [
 ]
 
 const NEGATIVE_CONTEXT =
-  /订单|发票|金额|价格|运费|邮编|电话|手机号|身份证|快递|物流|优惠|折扣|促销|优惠券|兑换券|积分|邀请|推广|工单|预订|预约|order|invoice|amount|price|zip|phone|tel|tracking|shipment|coupon|promo|discount|voucher|gift|referral|invite|invitation|ticket|reservation|booking/i
+  /订单|发票|金额|价格|运费|邮编|电话|手机号|身份证|快递|物流|优惠|折扣|促销|优惠券|兑换券|积分|邀请|推广|工单|预订|预约|\b(?:order|invoice|amount|price|zip|phone|telephone|tracking|shipment|coupon|promo|discount|voucher|gift|referral|invite|invitation|ticket|reservation|booking)\b/i
 
 const TECH_CONTEXT = /版本|version|release|build|issue|pull request|commit|pr\s*#/i
 
@@ -143,18 +143,34 @@ function contextAround(text: string, start: number, end: number): string {
   let from = lineStart
   let to = lineEnd === -1 ? text.length : lineEnd
 
-  const previousEnd = lineStart - 1
-  if (previousEnd > 0) {
+  // Include the closest non-empty line before the code, skipping blank lines.
+  let previousEnd = lineStart - 1
+  for (let step = 0; step < 3 && previousEnd > 0; step += 1) {
     const previousStart = text.lastIndexOf('\n', previousEnd - 1) + 1
     const previousLine = text.slice(previousStart, previousEnd).trim()
-    if (previousLine && previousLine.length <= 60) from = previousStart
+    if (previousLine) {
+      if (previousLine.length <= 80) from = previousStart
+      break
+    }
+    previousEnd = previousStart - 1
   }
 
-  if (lineEnd !== -1) {
-    const nextStart = lineEnd + 1
+  // Do the same for the closest non-empty line after the code.
+  let nextLineEnd = lineEnd
+  for (let step = 0; step < 3 && nextLineEnd !== -1; step += 1) {
+    const nextStart = nextLineEnd + 1
     const nextEnd = text.indexOf('\n', nextStart)
     const nextLine = text.slice(nextStart, nextEnd === -1 ? text.length : nextEnd).trim()
-    if (nextLine && nextLine.length <= 60) to = nextEnd === -1 ? text.length : nextEnd
+    if (nextLine) {
+      if (nextLine.length <= 80) to = nextEnd === -1 ? text.length : nextEnd
+      break
+    }
+    nextLineEnd = nextEnd
+  }
+
+  if (to - from > 180) {
+    from = Math.max(from, start - 60)
+    to = Math.min(to, end + 60)
   }
 
   let snippet = text.slice(from, to).replace(/\s+/g, ' ').trim()
@@ -177,8 +193,11 @@ function isStandaloneLine(text: string, start: number, end: number): boolean {
 function isSalutation(text: string, start: number, end: number): boolean {
   const before = text.slice(Math.max(0, start - 12), start)
   const after = text.slice(end, Math.min(text.length, end + 12))
-  if (/(?:亲爱的|尊敬的|dear|hi|hello)\s*$/i.test(before)) return true
-  return /^\s*(?:，|,)?\s*(?:您好|你好|hi|hello|dear)/i.test(after)
+  if (/(?:亲爱的|尊敬的|\b(?:dear|hi|hello))\s*$/i.test(before)) return true
+  return (
+    /^\s*(?:，|,)?\s*(?:您好|你好)/.test(after) ||
+    /^\s*(?:，|,)?\s*(?:hi|hello|dear)\b/i.test(after)
+  )
 }
 
 function maxLetterRun(value: string): number {
@@ -326,7 +345,7 @@ export function findVerificationCode(input: {
   for (const seed of seeds) {
     const keywords = findKeywordMatches(seed.text)
     const score = scoreSeed(seed, keywords, Boolean(expiry))
-    if (score === null || score < 8) continue
+    if (score === null || score < 9.5) continue
     candidates.push({
       code: seed.code,
       score,
@@ -361,7 +380,11 @@ export function findVerificationCode(input: {
     const candidateIsBody = candidate.source === 'body'
     const existingIsBody = existing.source === 'body'
     if (candidateIsBody && !existingIsBody) {
-      byCode.set(key, candidate)
+      byCode.set(key, { ...candidate, score: Math.max(candidate.score, existing.score) })
+      continue
+    }
+    if (!candidateIsBody && existingIsBody) {
+      existing.score = Math.max(existing.score, candidate.score)
       continue
     }
     if (candidateIsBody === existingIsBody && candidate.score > existing.score) {

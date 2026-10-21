@@ -15,7 +15,9 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 - Per-user preferences stored server-side: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
 - Unified inbox across all accounts, plus a per-account folder tree
-- Pagination, search, read/unread, star, archive and delete (moves to the server trash when available)
+- Pagination, search, explicit read/unread markers with per-row toggles and one-click "mark all read", star, archive and delete (moves to the server trash when available)
+- Three reader views: full HTML, simplified text (images and styling removed, links kept) and verification code; the choice is remembered per browser
+- Verification-code detection across the subject and body, preserving letter case, with expiry hints and one-click copy; it runs locally in the browser
 - Starred view: flagged mail is collected across folders under "收藏" in the sidebar, where it can be read, un-starred or deleted and searched
 - Delete confirmation showing the subject, sender and destination, with a session-only switch to skip later confirmations (also exposed in Settings)
 - Rich-text compose, CC/BCC, attachments, per-account plain-text signature, recipient autocomplete, reply/reply-all/forward quoting, and automatic copy to Sent
@@ -127,6 +129,7 @@ Most providers require an app-specific password (Gmail, iCloud, Yahoo) or an aut
 - Mailbox passwords are encrypted with AES-256-GCM and never returned by the API.
 - Email HTML is sanitized server-side and rendered inside a sandboxed iframe with `default-src 'none'`.
 - Remote images are blocked until the reader explicitly opts in.
+- Verification-code detection runs entirely in the browser; message bodies are not sent to a third-party service.
 - State-changing requests are checked against the configured browser origin; auth endpoints are rate limited.
 - This project targets **single-tenant self-hosting**. Do not expose it to untrusted users: arbitrary IMAP hosts create an SSRF surface by design.
 

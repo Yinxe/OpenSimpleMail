@@ -6,19 +6,25 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Fixed
 
+- Keep a strong active style on the opened message row, including in the starred view, by matching the message's real folder and using an accent bar instead of a subtle tint.
+- Cache folder counts for 45 seconds and pipeline STATUS requests, so sidebar refresh no longer performs one sequential round-trip per folder.
 - Show an explicit error state with retry in the message list instead of rendering an IMAP failure as "no messages".
 - Cache parsed messages briefly, so reopening a message or downloading several attachments does not download and parse the same source again.
 - Listen for `ImapFlow` connection-level `error` events, so an idle socket timeout or dropped IMAP connection no longer terminates the Node process.
 - Retry a failed IMAP operation once on a fresh connection, and use portable `LIST` + `STATUS` folder counting for providers such as QQ Mail that close the connection on `LIST-STATUS`.
 - Raise the IMAP socket timeout above the pool idle-close interval to avoid tearing down healthy idle connections.
 - Pre-bundle the CommonJS `@osm/shared` workspace package for Vite, so its named exports resolve in development again.
+- Preserve the original letter case of alphanumeric verification codes (`090b51` no longer becomes `090B51`), and prefer the body's casing when the subject disagrees.
+- Reject recipient names and usernames in the salutation instead of treating them as codes; candidates are now scored by keyword proximity, numeric format, isolated line, repetition and negative context.
+- Recognise "15 分钟后失效" expiry phrasing and show a case-sensitivity hint for codes that contain letters.
 
 ### Added
 
+- Read-state controls in the message list: a clear unread dot / read check marker, a per-row read/unread toggle, and a one-click "mark all read" action for the current folder or unified inbox.
 - Recipient autocomplete in the composer: addresses are learned from sent mail and opened messages, suggestions follow the token after the last comma/semicolon, and can be picked with the mouse or arrow keys + Enter.
 - Reader rendering modes: full HTML, simplified text (images and styling removed, paragraphs/lists/links kept) and a verification-code view; the choice is remembered per browser.
 - Verification-code extraction from the message subject, text part and rendered HTML, with one-click copy, expiry hints, alternative candidates and a fallback to the original message when nothing is found.
-- A seeded verification-code email in the demo workspace, so the new reader mode can be tried without a real mailbox.
+- Two seeded verification-code emails in the demo workspace (one numeric, one lowercase alphanumeric), so the new reader mode and case handling can be tried without a real mailbox.
 - Per-account plain-text signature, editable in the account dialog and inserted below the caret for new mail or above the quote for replies and forwards.
 - Starred view (收藏): a virtual mailbox that aggregates `\Flagged` messages across folders, uses the provider's own `\Flagged` folder when it exists, keeps search scoped to flagged mail, and returns each message's real folder so open/star/delete work from the merged list.
 - Sidebar starred entry with a count when the provider exposes a `\Flagged` folder.

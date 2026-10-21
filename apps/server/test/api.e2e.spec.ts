@@ -467,6 +467,26 @@ describe('demo mailbox', () => {
     expect(updated.body.starred).toBe(true)
   })
 
+  it('marks every message in a mailbox as read', async () => {
+    const before = await client.json<MailboxDto[]>(`/accounts/${account.id}/mailboxes`)
+    const inbox = before.body.find((item) => item.path === 'INBOX')
+    expect(inbox?.unread).toBeGreaterThan(0)
+
+    const marked = await client.json(
+      `/accounts/${account.id}/mailboxes/read`,
+      post({ mailbox: 'INBOX' }),
+    )
+    expect(marked.status).toBe(204)
+
+    const after = await client.json<MailboxDto[]>(`/accounts/${account.id}/mailboxes`)
+    expect(after.body.find((item) => item.path === 'INBOX')?.unread).toBe(0)
+
+    const page = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=50`,
+    )
+    expect(page.body.messages.every((item) => !item.unread)).toBe(true)
+  })
+
   it('aggregates starred messages in the virtual starred mailbox', async () => {
     const page = await client.json<MessagePageDto>(
       `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=50`,

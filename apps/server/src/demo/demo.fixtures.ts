@@ -146,6 +146,43 @@ ${button('查看 Issue', 'https://github.com/')}
 
   messages.push(
     message({
+      id: 'otp-canglan',
+      mailbox: 'INBOX',
+      subject: '沧蓝api 登录验证码',
+      from: [{ name: '沧蓝api', address: 'noreply@canglan.api' }],
+      to: [me],
+      cc: [],
+      bcc: [],
+      replyTo: [],
+      date: at(0, 9, 12),
+      flags: [],
+      text: `demo1423，您好：
+
+您的验证码是：
+
+090b51
+
+验证码将在 15 分钟后失效。
+
+如果不是您本人操作，请忽略此邮件。`,
+      html: emailShell({
+        title: '沧蓝api',
+        accent: '#0f766e',
+        body: `${paragraph('demo1423，您好：')}
+${paragraph('您的验证码是：')}
+<div style="margin:18px 0;padding:20px 18px;border:1px solid #e4ded2;border-radius:10px;background:#faf7f0;text-align:center;">
+<div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:38px;letter-spacing:8px;font-weight:600;color:#24211d;">090b51</div>
+</div>
+<p style="margin:0 0 14px 0;">验证码将在 <strong>15 分钟</strong>后失效。</p>
+<p style="margin:0;color:#6b7280;font-size:13px;">如果不是您本人操作，请忽略此邮件。</p>`,
+        footer: 'This email was sent by 沧蓝api. Please do not reply directly.',
+      }),
+      attachments: [],
+    }),
+  )
+
+  messages.push(
+    message({
       id: 'otp-login',
       mailbox: 'INBOX',
       subject: 'OpenSimpleMail 登录验证码 · 482913',

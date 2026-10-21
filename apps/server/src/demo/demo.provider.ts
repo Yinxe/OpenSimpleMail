@@ -167,6 +167,18 @@ export class DemoProvider implements MailProvider {
     this.save()
   }
 
+  async markMailboxRead(mailbox: string): Promise<void> {
+    const starred = mailbox === STARRED || mailbox === STARRED_MAILBOX
+    let changed = false
+    for (const message of this.store.messages) {
+      const matches = starred ? isStarred(message) : message.mailbox === mailbox
+      if (!matches || message.flags.includes('\\Seen')) continue
+      message.flags = [...message.flags, '\\Seen']
+      changed = true
+    }
+    if (changed) this.save()
+  }
+
   async move(_mailbox: string, uid: number, destination: string): Promise<void> {
     const message = this.find(uid)
     message.mailbox = destination

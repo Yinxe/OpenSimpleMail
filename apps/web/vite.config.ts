@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
+// Allows a second Vite instance to target a test API without editing this file.
 const apiTarget = process.env.OSM_API_PROXY ?? 'http://localhost:4000'
 
 export default defineConfig({
