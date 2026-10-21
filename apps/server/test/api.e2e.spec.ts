@@ -6,6 +6,7 @@ import type {
   AccountDto,
   AttachmentCacheStatsDto,
   ContactDto,
+  LoginEventDto,
   MailboxDto,
   MessagePageDto,
   MoveOutcomeDto,
@@ -384,6 +385,9 @@ describe('authentication', () => {
 describe('account security', () => {
   const email = `security-${Date.now()}@example.com`
   const client = new ApiClient()
+  // Session created with the new password in the rotation test, reused below so
+  // the suite stays under the login rate limit.
+  const rotated = new ApiClient()
 
   it('lists sessions, marks the current one and revokes the others', async () => {
     const registered = await client.json<AuthResponse>('/auth/register', {
@@ -441,26 +445,32 @@ describe('account security', () => {
       ...post({ email, password: 'a-strong-password' }),
     })
     expect(oldPassword.status).toBe(401)
-    const newPassword = await new ApiClient().json<AuthResponse>('/auth/login', {
+    const newPassword = await rotated.json<AuthResponse>('/auth/login', {
       ...post({ email, password: 'another-strong-password' }),
     })
     expect(newPassword.status).toBe(200)
   })
 
   it('revokes a single session but refuses the current one', async () => {
-    const extra = new ApiClient()
-    await extra.json('/auth/login', { ...post({ email, password: 'another-strong-password' }) })
-
     const sessions = await client.json<SessionDto[]>('/auth/sessions')
     const otherSession = sessions.body.find((item) => !item.current)
     expect(otherSession).toBeDefined()
     const removed = await client.json(`/auth/sessions/${otherSession?.id}`, { method: 'DELETE' })
     expect(removed.status).toBe(204)
-    expect((await extra.json('/auth/me')).status).toBe(401)
+    expect((await rotated.json('/auth/me')).status).toBe(401)
 
     const current = sessions.body.find((item) => item.current)
     const rejected = await client.json(`/auth/sessions/${current?.id}`, { method: 'DELETE' })
     expect(rejected.status).toBe(400)
+  })
+
+  it('records successful and failed sign-in attempts', async () => {
+    const events = await client.json<LoginEventDto[]>('/auth/login-events?limit=20')
+    expect(events.status).toBe(200)
+    expect(events.body.some((event) => event.success)).toBe(true)
+    // The rejected old-password login above is recorded for the same address.
+    expect(events.body.some((event) => !event.success && event.reason === 'credentials')).toBe(true)
+    expect(events.body[0]?.createdAt >= (events.body.at(-1)?.createdAt ?? '')).toBe(true)
   })
 })
 

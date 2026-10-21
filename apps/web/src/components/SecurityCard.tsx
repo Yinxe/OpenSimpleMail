@@ -1,6 +1,6 @@
-import type { SessionDto } from '@osm/shared'
+import type { LoginEventDto, SessionDto } from '@osm/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { KeyRound, Monitor, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, KeyRound, Monitor, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -56,6 +56,12 @@ export function SecurityCard() {
     queryFn: () => api.get<SessionDto[]>('/auth/sessions'),
   })
   const sessions = sessionsQuery.data ?? []
+
+  const eventsQuery = useQuery({
+    queryKey: ['login-events'],
+    queryFn: () => api.get<LoginEventDto[]>('/auth/login-events?limit=8'),
+  })
+  const events = eventsQuery.data ?? []
 
   const changePassword = useMutation({
     mutationFn: (payload: { currentPassword: string; newPassword: string }) =>
@@ -228,6 +234,39 @@ export function SecurityCard() {
             )}
           </article>
         ))}
+
+        <div className="security-sessions__head security-sessions__head--events">
+          <h3>最近登录</h3>
+          <span className="security-sessions__hint">保留 90 天，最多显示 8 条</span>
+        </div>
+
+        {events.length === 0 ? (
+          <p className="settings-note">还没有登录记录。</p>
+        ) : (
+          events.map((event) => (
+            <article className="session-row" key={event.id}>
+              <span
+                className={`session-row__icon ${event.success ? '' : 'session-row__icon--warn'}`}
+              >
+                {event.success ? <KeyRound size={16} /> : <AlertTriangle size={16} />}
+              </span>
+              <div className="session-row__body">
+                <div className="session-row__title">
+                  <strong>{event.success ? '登录成功' : '登录失败'}</strong>
+                  <span className="session-row__device">{describeAgent(event.userAgent)}</span>
+                </div>
+                <p>
+                  {event.ip ?? '未知地址'} · {formatMoment(event.createdAt)}
+                  {event.success
+                    ? ''
+                    : event.reason === 'demo'
+                      ? ' · 演示账号禁止密码登录'
+                      : ' · 密码不正确'}
+                </p>
+              </div>
+            </article>
+          ))
+        )}
       </div>
     </section>
   )

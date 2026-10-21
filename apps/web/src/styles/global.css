@@ -3000,6 +3000,21 @@ code {
   gap: 8px;
   font-size: 13px;
 }
+.security-sessions__head--events {
+  margin-top: 18px;
+}
+.security-sessions__hint {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+.session-row__icon--warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.session-row__device {
+  color: var(--ink-muted);
+  font-size: 11.5px;
+}
 .session-row__body p {
   margin-top: 2px;
   color: var(--ink-muted);

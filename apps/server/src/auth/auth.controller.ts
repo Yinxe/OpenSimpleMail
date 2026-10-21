@@ -7,11 +7,12 @@ import {
   Inject,
   Param,
   Post,
+  Query,
   Req,
   Res,
 } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
-import type { AppConfigDto, SessionDto, UserDto } from '@osm/shared'
+import type { AppConfigDto, LoginEventDto, SessionDto, UserDto } from '@osm/shared'
 import type { Request, Response } from 'express'
 import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { SettingsService } from '../settings/settings.service'
@@ -53,6 +54,16 @@ export class AuthController {
   @Get('sessions')
   sessions(@CurrentUser('id') userId: string, @Req() req: Request): SessionDto[] {
     return this.auth.listSessions(userId, req.cookies?.[SESSION_COOKIE] as string | undefined)
+  }
+
+  @Get('login-events')
+  loginEvents(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('email') email: string,
+    @Query('limit') limit?: string,
+  ): LoginEventDto[] {
+    const parsed = limit ? Number.parseInt(limit, 10) : 10
+    return this.auth.listLoginEvents(userId, email, Number.isFinite(parsed) ? parsed : 10)
   }
 
   @Post('sessions/revoke-others')

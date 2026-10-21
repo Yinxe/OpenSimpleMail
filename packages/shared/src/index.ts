@@ -207,6 +207,16 @@ export interface MoveOutcomeDto {
 }
 
 /** Where the server-side copy of a draft lives, so the client can replace or delete it. */
+export interface LoginEventDto {
+  id: string
+  ip: string | null
+  userAgent: string | null
+  success: boolean
+  /** Why a failed attempt was rejected: bad credentials or a demo account. */
+  reason: string | null
+  createdAt: string
+}
+
 export interface SessionDto {
   id: string
   userAgent: string | null

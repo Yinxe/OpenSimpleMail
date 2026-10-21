@@ -6,6 +6,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Sign-in audit trail: every login attempt is stored with IP, user agent, outcome and reason, kept for 90 days and shown to the account owner as "最近登录" (8 most recent) in Settings.
 - Account security in Settings: change the password (the current one is verified, the new hash replaces it and every other session is revoked in the same transaction) and manage sessions — the list shows browser, IP and sign-in time, with per-session revoke and "sign out other devices". Session rows now record the client IP through a small migration.
 
 - Administrator "attachment cache" panel under Settings: it shows how many messages are extracted, the disk usage against the configured budget, and a confirmed "clear cache" action (`GET` / `DELETE /api/admin/attachments`) that drops every extracted attachment without touching mail on the server. Parses already in flight are not written back into the cleared cache.

@@ -10,7 +10,7 @@ import {
   PreconditionFailedException,
   UnauthorizedException,
 } from '@nestjs/common'
-import type { SessionDto, UserDto } from '@osm/shared'
+import type { LoginEventDto, SessionDto, UserDto } from '@osm/shared'
 import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { CryptoService } from '../core/crypto.service'
 import { DatabaseService } from '../core/database.service'
@@ -119,9 +119,18 @@ export class AuthService {
     const stored = row?.password_hash ?? (await this.crypto.hashPassword('invalid-password'))
     const valid = await this.crypto.verifyPassword(dto.password, stored)
     if (!row || !valid || row.is_demo === 1) {
+      this.recordLogin({
+        userId: row?.id ?? null,
+        email,
+        ip,
+        userAgent,
+        success: false,
+        reason: row?.is_demo === 1 ? 'demo' : 'credentials',
+      })
       throw new UnauthorizedException('邮箱或密码不正确')
     }
 
+    this.recordLogin({ userId: row.id, email, ip, userAgent, success: true, reason: null })
     this.db.db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(new Date().toISOString())
     return this.createSession(toUserDto(row), userAgent, ip)
   }
@@ -315,6 +324,65 @@ export class AuthService {
     })
     transaction()
     this.logger.log(`Password changed for ${row.email}; other sessions revoked`)
+  }
+
+  /**
+   * Recent sign-in attempts for the account: its own successful sign-ins plus
+   * failed attempts against the same address, so a user can spot someone
+   * guessing their password without exposing other accounts' activity.
+   */
+  listLoginEvents(userId: string, email: string, limit = 10): LoginEventDto[] {
+    const rows = this.db.db
+      .prepare(
+        `SELECT id, ip, user_agent, success, reason, created_at FROM login_events
+         WHERE user_id = ? OR (email = ? AND success = 0)
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(userId, email, Math.min(Math.max(limit, 1), 50)) as Array<{
+      id: string
+      ip: string | null
+      user_agent: string | null
+      success: number
+      reason: string | null
+      created_at: string
+    }>
+
+    return rows.map((row) => ({
+      id: row.id,
+      ip: row.ip,
+      userAgent: row.user_agent,
+      success: row.success === 1,
+      reason: row.reason,
+      createdAt: row.created_at,
+    }))
+  }
+
+  private recordLogin(event: {
+    userId: string | null
+    email: string
+    ip?: string
+    userAgent?: string
+    success: boolean
+    reason: string | null
+  }): void {
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+    this.db.db
+      .prepare(
+        `INSERT INTO login_events (id, user_id, email, ip, user_agent, success, reason, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        randomUUID(),
+        event.userId,
+        event.email,
+        event.ip?.slice(0, 64) ?? null,
+        event.userAgent?.slice(0, 255) ?? null,
+        event.success ? 1 : 0,
+        event.reason,
+        new Date().toISOString(),
+      )
+    this.db.db.prepare('DELETE FROM login_events WHERE created_at < ?').run(cutoff)
   }
 
   listSessions(userId: string, token: string | undefined): SessionDto[] {
