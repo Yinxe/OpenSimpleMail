@@ -73,7 +73,15 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-If the Debian mirrors are slow from your network, point the build at another one:
+If the Debian mirrors are slow from your network, put the mirror in `.env` (it is
+gitignored) and the plain `docker compose up -d --build` will pick it up:
+
+```bash
+echo 'APT_MIRROR=mirrors.ustc.edu.cn' >> .env
+docker compose up -d --build
+```
+
+To change it for a single build only, pass the build arg instead:
 
 ```bash
 docker compose build --build-arg APT_MIRROR=mirrors.ustc.edu.cn

@@ -1,6 +1,11 @@
 services:
   open-simple-mail:
-    build: .
+    build:
+      context: .
+      # .env (gitignored) may set APT_MIRROR=mirrors.ustc.edu.cn so plain
+      # `docker compose up -d --build` does not crawl against deb.debian.org.
+      args:
+        APT_MIRROR: ${APT_MIRROR:-}
     image: open-simple-mail:latest
     container_name: open-simple-mail
     restart: unless-stopped

@@ -29,6 +29,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Fixed
 
+- `docker compose up -d --build` can now pick the Debian mirror by itself: the compose file forwards `APT_MIRROR` from `.env` as a build arg, so a local `APT_MIRROR=mirrors.ustc.edu.cn` no longer needs the separate `docker compose build --build-arg` step. A bare `apt-get update` against `deb.debian.org` crawls at roughly 10 KB/s from this network and the build looks hung rather than failing.
 - Show the starred messages of a real account: the summary fetch treated search UIDs as sequence numbers, so the starred view (and a folder search with hits) came back empty for IMAP servers such as QQ Mail. `fetch` now passes `{ uid: true }`, and `apps/server/src/mail/imap.starred.spec.ts` covers the merge, the empty mailbox and a `\Flagged` folder.
 - Show "N accounts could not be read" above the unified inbox instead of silently returning fewer messages than the account list suggests.
 - Keep a strong active style on the opened message row, including in the starred view, by matching the message's real folder and using an accent bar instead of a subtle tint.

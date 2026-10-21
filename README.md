@@ -103,7 +103,14 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-国内网络拉 Debian 包慢时，先换源再构建：
+国内网络拉 Debian 包慢时，把镜像源写进 `.env`（该文件不进 git），之后普通的 `docker compose up -d --build` 就会带上它：
+
+```bash
+echo 'APT_MIRROR=mirrors.ustc.edu.cn' >> .env
+docker compose up -d --build
+```
+
+只想对一次构建生效，也可以直接传构建参数：
 
 ```bash
 docker compose build --build-arg APT_MIRROR=mirrors.ustc.edu.cn
