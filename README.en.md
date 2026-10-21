@@ -75,6 +75,13 @@ Administrators can change these options later under **Settings → System settin
 
 Upgrading an older database promotes the oldest existing user to administrator and keeps registration open, preserving the previous behaviour.
 
+### Recovering a forgotten administrator password
+
+1. Temporarily set `ADMIN_RECOVERY_PASSWORD` (12+ characters) in `.env` or the Compose environment.
+2. Restart the service. A “Forgot admin password?” link appears on the login page.
+3. Enter the administrator email, the recovery password and a new password. The server verifies the recovery password in constant time, rotates the password, **invalidates every existing session for that account**, and signs you in.
+4. Remove `ADMIN_RECOVERY_PASSWORD` and restart again. The recovery endpoint is only for `is_admin` accounts; unknown users, non-admin accounts and wrong passwords share one generic error.
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -89,6 +96,7 @@ Upgrading an older database promotes the oldest existing user to administrator a
 | `SESSION_DAYS` | `30` | Session lifetime |
 | `COOKIE_SECURE` | `false` | Set to `true` behind HTTPS |
 | `TRUST_PROXY` | `0` | Number of reverse-proxy hops to trust (`1` behind Nginx/Caddy) |
+| `ADMIN_RECOVERY_PASSWORD` | empty | Optional emergency admin recovery password (12+ chars). Remove it after use |
 | `WEB_DIST` | auto | Custom web build directory |
 
 Most providers require an app-specific password (Gmail, iCloud, Yahoo) or an authorization code (QQ, 163/126). OpenSimpleMail uses standard IMAP/SMTP, so no OAuth app review is needed.
@@ -97,6 +105,7 @@ Most providers require an app-specific password (Gmail, iCloud, Yahoo) or an aut
 
 - The first administrator must be created through `/setup`; application APIs are blocked until initialization completes.
 - Public registration can be disabled by an administrator and is enforced by the API, not just hidden in the UI.
+- Administrator recovery uses the optional `ADMIN_RECOVERY_PASSWORD` environment variable. A successful recovery rotates the password and invalidates all sessions for that account; remove the variable immediately afterwards.
 - Passwords are hashed with scrypt; session tokens are stored as SHA-256 digests in HttpOnly, SameSite=Lax cookies.
 - Mailbox passwords are encrypted with AES-256-GCM and never returned by the API.
 - Email HTML is sanitized server-side and rendered inside a sandboxed iframe with `default-src 'none'`.

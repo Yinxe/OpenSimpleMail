@@ -37,6 +37,7 @@ What it does **not** protect against:
 - **A compromised server or `APP_SECRET`**. Anyone with both the database and the secret can decrypt mailbox credentials.
 - **Untrusted multi-tenant use**. Any authenticated user can ask the server to connect to an arbitrary IMAP/SMTP host and port. This is inherent to a bring-your-own-mailbox client and creates an SSRF surface. Do not offer public sign-ups.
 - **Malicious attachments**. Files are downloaded as-is; they are never executed by the server, but your desktop may still open them.
+- **Recovery password exposure**. `ADMIN_RECOVERY_PASSWORD` is a deliberate, temporary backdoor for administrators. Anyone who learns it can take over any admin account. Use a long random value, keep it out of logs and shell history, and remove it immediately after recovery. The endpoint only accepts admin accounts, compares in constant time, rotates the password and invalidates old sessions.
 - **First-visitor takeover before setup**. While the database is uninitialized, `/api/setup` is intentionally public so the operator can create the first administrator. Anyone who can reach the instance before setup can claim it. Complete the wizard immediately after deployment, or keep the instance behind a private network / proxy auth until initialized.
 - **Phishing / spoofed senders**. The UI displays the headers the mail server provides; it does not verify DKIM or DMARC.
 - **Email content confidentiality on the mail server**. IMAP/SMTP TLS protects transport, but messages still live on your provider's servers.

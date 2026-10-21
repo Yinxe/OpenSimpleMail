@@ -92,6 +92,7 @@ beforeAll(async () => {
       APP_SECRET: 'e2e-test-secret-with-more-than-24-characters',
       WEB_ORIGIN: ORIGIN,
       DEMO_ENABLED: 'true',
+      ADMIN_RECOVERY_PASSWORD: 'recovery-password-123',
       COOKIE_SECURE: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -217,6 +218,65 @@ describe('first-run setup', () => {
       body: JSON.stringify({ allowRegistration: false }),
     })
     expect(forbidden.status).toBe(403)
+  })
+
+  it('recovers an administrator with the environment password and rotates the session', async () => {
+    const oldSession = new ApiClient()
+    await oldSession
+      .json('/auth/login', { ...post({ email: adminEmail, password: 'admin-password' }) })
+      .then((response) => expect(response.status).toBe(200))
+
+    const wrong = await new ApiClient().json('/auth/recover', {
+      ...post({
+        email: adminEmail,
+        recoveryPassword: 'not-the-recovery-password',
+        newPassword: 'new-admin-password',
+      }),
+    })
+    expect(wrong.status).toBe(401)
+
+    const recovered = await admin.json<AuthResponse>('/auth/recover', {
+      ...post({
+        email: adminEmail,
+        recoveryPassword: 'recovery-password-123',
+        newPassword: 'new-admin-password',
+      }),
+    })
+    expect(recovered.status).toBe(200)
+    expect(recovered.body.user.isAdmin).toBe(true)
+
+    // Every session created before the recovery must be invalidated.
+    const oldMe = await oldSession.json('/auth/me')
+    expect(oldMe.status).toBe(401)
+
+    const oldPassword = await new ApiClient().json('/auth/login', {
+      ...post({ email: adminEmail, password: 'admin-password' }),
+    })
+    expect(oldPassword.status).toBe(401)
+
+    const newPassword = await new ApiClient().json<AuthResponse>('/auth/login', {
+      ...post({ email: adminEmail, password: 'new-admin-password' }),
+    })
+    expect(newPassword.status).toBe(200)
+    expect(newPassword.body.user.isAdmin).toBe(true)
+
+    const nonAdmin = new ApiClient()
+    const created = await nonAdmin.json<AuthResponse>('/auth/register', {
+      ...post({
+        name: 'Not Admin',
+        email: `not-admin-${Date.now()}@example.com`,
+        password: 'a-strong-password',
+      }),
+    })
+    expect(created.status).toBe(201)
+    const rejected = await nonAdmin.json('/auth/recover', {
+      ...post({
+        email: created.body.user.email,
+        recoveryPassword: 'recovery-password-123',
+        newPassword: 'another-password',
+      }),
+    })
+    expect(rejected.status).toBe(401)
   })
 })
 

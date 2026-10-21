@@ -19,6 +19,7 @@ export interface AppConfigDto {
   siteName: string
   allowRegistration: boolean
   demoEnabled: boolean
+  recoveryEnabled: boolean
   version: string
   maxAttachmentMb: number
 }

@@ -100,4 +100,11 @@ export class CryptoService {
   sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex')
   }
+
+  /** Constant-time string comparison, used for the emergency recovery password. */
+  safeCompare(left: string, right: string): boolean {
+    const leftHash = createHash('sha256').update(left).digest()
+    const rightHash = createHash('sha256').update(right).digest()
+    return timingSafeEqual(leftHash, rightHash)
+  }
 }

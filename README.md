@@ -111,6 +111,7 @@ docker compose up -d --build
 | `SESSION_DAYS` | `30` | 登录会话有效期（天） |
 | `COOKIE_SECURE` | `false` | 通过 HTTPS 部署时设为 `true` |
 | `TRUST_PROXY` | `0` | 反向代理层数；放在 Nginx/Caddy 后设为 `1`，否则客户端可伪造 `X-Forwarded-For` |
+| `ADMIN_RECOVERY_PASSWORD` | 空 | 可选的管理员应急恢复密码，至少 12 字符。设置后登录页出现「忘记管理员密码？」；用完请删除并重启 |
 | `WEB_DIST` | 自动探测 | 自定义前端构建产物目录 |
 
 ## 首次启动与权限
@@ -128,6 +129,28 @@ docker compose up -d --build
 - **站点名称**：显示在登录页、页面标题和系统设置中。
 
 未初始化时，除健康检查、公开配置和 `/api/setup` 之外的 API 都会返回 `412 Precondition Failed`。从旧版本升级的数据库会自动把最早创建的用户提升为管理员，并保留原有的开放注册策略。
+
+### 忘记管理员密码怎么办
+
+系统不保存明文密码，也没有默认后门。管理员忘记密码时，可以用环境变量做一次临时恢复：
+
+1. 在 `.env`（或 Docker Compose 的环境变量）中临时设置：
+
+   ```bash
+   ADMIN_RECOVERY_PASSWORD="$(openssl rand -base64 24)"
+   ```
+
+2. 重启服务。登录页会出现「忘记管理员密码？」入口。
+3. 输入管理员邮箱、上面的恢复密码，并设置一个新密码。提交后会：
+   - 校验恢复密码（常量时间比较）
+   - 更新管理员密码
+   - **注销该管理员的所有旧会话**
+   - 直接登录并进入工作台
+4. 登录成功后，立即从 `.env` 删除 `ADMIN_RECOVERY_PASSWORD` 并再次重启，避免长期保留后门。
+
+恢复入口只对 `is_admin = 1` 的账号生效，非管理员、未知邮箱和错误恢复密码都会返回同一条错误信息；接口有独立的速率限制。恢复密码至少 12 字符，过短会导致服务启动失败。
+
+![管理员恢复登录](docs/screenshots/recovery.png)
 
 ## 接入邮箱
 
@@ -151,6 +174,7 @@ OpenSimpleMail 面向**单租户自托管**场景：服务器主人就是所有�
 
 - 首次启动必须通过 `/setup` 创建管理员；未初始化时业务 API 返回 412，注册与演示入口也被禁用。
 - 管理员可以关闭公开注册，服务端会对注册接口强制校验，而不是只隐藏前端入口。
+- 管理员恢复依赖可选的 `ADMIN_RECOVERY_PASSWORD` 环境变量；恢复成功会轮换密码并注销该账号的全部旧会话，用完应立即移除变量。
 - 本地账号密码使用 `scrypt` 加盐哈希；会话令牌只以 SHA-256 摘要形式落库，Cookie 为 `HttpOnly` + `SameSite=Lax`。
 - 邮箱密码使用 AES-256-GCM 加密，密钥由 `APP_SECRET` 派生；API 永远不会回传密码。
 - 邮件 HTML 在服务端用 sanitize-html 清洗，在客户端放进 `sandbox` iframe 渲染；iframe 内 CSP 为 `default-src 'none'`，默认阻止远程图片，点击「显示图片」后才允许。

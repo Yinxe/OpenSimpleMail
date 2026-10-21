@@ -19,6 +19,7 @@ interface AuthContextValue {
   register: (name: string, email: string, password: string) => Promise<void>
   demoLogin: () => Promise<void>
   logout: () => Promise<void>
+  recoverAdmin: (email: string, recoveryPassword: string, newPassword: string) => Promise<void>
   setup: (payload: SetupPayload) => Promise<void>
   refreshConfig: () => Promise<void>
 }
@@ -93,6 +94,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient])
 
+  const recoverAdmin = useCallback(
+    async (email: string, recoveryPassword: string, newPassword: string) => {
+      const result = await api.post<AuthResponse>('/auth/recover', {
+        email,
+        recoveryPassword,
+        newPassword,
+      })
+      queryClient.clear()
+      setUser(result.user)
+    },
+    [queryClient],
+  )
+
   const setup = useCallback(
     async (payload: SetupPayload) => {
       const result = await api.post<AuthResponse>('/setup', payload)
@@ -127,10 +141,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       demoLogin,
       logout,
+      recoverAdmin,
       setup,
       refreshConfig,
     }),
-    [user, config, loading, login, register, demoLogin, logout, setup, refreshConfig],
+    [user, config, loading, login, register, demoLogin, logout, recoverAdmin, setup, refreshConfig],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

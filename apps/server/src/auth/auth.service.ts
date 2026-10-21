@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   PreconditionFailedException,
   UnauthorizedException,
 } from '@nestjs/common'
@@ -16,7 +17,7 @@ import { DatabaseService } from '../core/database.service'
 import { DemoService } from '../demo/demo.service'
 import { SettingsService } from '../settings/settings.service'
 import type { SetupDto } from '../setup/setup.dto'
-import type { LoginDto, RegisterDto } from './auth.dto'
+import type { LoginDto, RecoverAdminDto, RegisterDto } from './auth.dto'
 
 export const SESSION_COOKIE = 'osm_session'
 
@@ -144,6 +145,48 @@ export class AuthService {
     this.pruneDemoUsers()
     this.logger.log(`Created demo workspace for ${user.email}`)
     return this.createSession(toUserDto(user), userAgent)
+  }
+
+  /**
+   * Emergency recovery for administrators. The recovery password is read from
+   * ADMIN_RECOVERY_PASSWORD, never stored in the database. A successful recovery
+   * also replaces the password and invalidates every existing session for the
+   * account, so the operator can remove the environment variable afterwards.
+   */
+  async recoverAdmin(dto: RecoverAdminDto, userAgent?: string): Promise<SessionResult> {
+    if (!this.config.adminRecoveryPassword) {
+      throw new NotFoundException('管理员恢复未启用')
+    }
+
+    const email = dto.email.trim().toLowerCase()
+    const row = this.db.db.prepare('SELECT * FROM users WHERE email = ?').get(email) as
+      | UserRow
+      | undefined
+
+    const validAccount = Boolean(row && row.is_admin === 1 && row.is_demo === 0)
+    const validPassword =
+      validAccount &&
+      this.crypto.safeCompare(dto.recoveryPassword, this.config.adminRecoveryPassword)
+
+    // One generic message for unknown accounts, non-admin accounts and a wrong
+    // recovery password avoids account enumeration.
+    if (!row || !validAccount || !validPassword) {
+      throw new UnauthorizedException('恢复信息不正确')
+    }
+
+    const passwordHash = await this.crypto.hashPassword(dto.newPassword)
+    const transaction = this.db.db.transaction(() => {
+      this.db.db
+        .prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        .run(passwordHash, row.id)
+      this.db.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id)
+    })
+    transaction()
+
+    this.logger.warn(
+      `Administrator recovery used for ${email}; unset ADMIN_RECOVERY_PASSWORD after signing in`,
+    )
+    return this.createSession(toUserDto({ ...row, password_hash: passwordHash }), userAgent)
   }
 
   /**

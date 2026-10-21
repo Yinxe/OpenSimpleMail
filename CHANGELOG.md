@@ -16,6 +16,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 - Demo login and registration are blocked before setup completes.
 - Non-admin users cannot read or change system settings.
+- Optional `ADMIN_RECOVERY_PASSWORD` emergency recovery: admin-only, constant-time comparison, rate limited, rotates the password and invalidates all sessions for the account.
 
 ## [0.1.0] - 2026-10-21
 

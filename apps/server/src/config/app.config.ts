@@ -15,6 +15,8 @@ export interface AppConfig {
   cookieSecure: boolean
   /** Number of reverse-proxy hops to trust for req.ip / req.protocol. 0 disables. */
   trustProxy: number
+  /** Optional emergency password for administrator recovery. Empty disables it. */
+  adminRecoveryPassword: string
   /** Absolute path to the built React app, or null when it is not present. */
   webDist: string | null
   version: string
@@ -47,6 +49,11 @@ export function loadAppConfig(): AppConfig {
   }
 
   const port = int(process.env.PORT, 4000)
+  const adminRecoveryPassword = process.env.ADMIN_RECOVERY_PASSWORD?.trim() ?? ''
+  if (adminRecoveryPassword && adminRecoveryPassword.length < 12) {
+    throw new Error('ADMIN_RECOVERY_PASSWORD must be at least 12 characters long')
+  }
+
   const webOrigins = (process.env.WEB_ORIGIN ?? 'http://localhost:5173,http://127.0.0.1:5173')
     .split(',')
     .map((origin) => origin.trim())
@@ -65,6 +72,7 @@ export function loadAppConfig(): AppConfig {
     maxAttachmentMb: int(process.env.MAX_ATTACHMENT_MB, 25),
     cookieSecure: bool(process.env.COOKIE_SECURE, false),
     trustProxy: int(process.env.TRUST_PROXY, 0),
+    adminRecoveryPassword,
     webDist: process.env.WEB_DIST ? resolve(process.env.WEB_DIST) : null,
     version: process.env.APP_VERSION ?? '0.1.0',
   }

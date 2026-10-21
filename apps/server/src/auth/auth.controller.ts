@@ -6,7 +6,7 @@ import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { SettingsService } from '../settings/settings.service'
 import { SetupAllowed } from '../setup/setup.decorators'
 import { CurrentUser, Public } from './auth.decorators'
-import { LoginDto, RegisterDto } from './auth.dto'
+import { LoginDto, RecoverAdminDto, RegisterDto } from './auth.dto'
 import { AuthService, SESSION_COOKIE } from './auth.service'
 import { attachSessionCookie, sessionCookieOptions } from './session-cookie'
 
@@ -28,6 +28,7 @@ export class AuthController {
   getConfig(): AppConfigDto {
     return {
       ...this.settings.get(),
+      recoveryEnabled: Boolean(this.config.adminRecoveryPassword),
       version: this.config.version,
       maxAttachmentMb: this.config.maxAttachmentMb,
     }
@@ -69,6 +70,20 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     const session = await this.auth.demoLogin(req.get('user-agent'))
+    attachSessionCookie(res, session, this.config)
+    return { user: session.user }
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('recover')
+  async recover(
+    @Body() dto: RecoverAdminDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const session = await this.auth.recoverAdmin(dto, req.get('user-agent'))
     attachSessionCookie(res, session, this.config)
     return { user: session.user }
   }

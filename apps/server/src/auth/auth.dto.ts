@@ -14,6 +14,19 @@ export class RegisterDto {
   password!: string
 }
 
+export class RecoverAdminDto {
+  @IsEmail({}, { message: '请输入管理员邮箱地址' })
+  email!: string
+
+  @IsString()
+  @Length(12, 512, { message: '恢复密码长度不正确' })
+  recoveryPassword!: string
+
+  @IsString()
+  @Length(8, 128, { message: '新密码至少需要 8 个字符' })
+  newPassword!: string
+}
+
 export class LoginDto {
   @IsEmail({}, { message: '请输入有效的邮箱地址' })
   email!: string
