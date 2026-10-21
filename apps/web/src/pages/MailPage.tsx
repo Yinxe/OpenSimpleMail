@@ -1161,6 +1161,18 @@ export function MailPage() {
               if (!accountId) return
               toggleRead(item, accountId, mailboxOf(item))
             }}
+            onArchive={(item) => {
+              const accountId = item.accountId ?? activeAccount?.id
+              if (!accountId) return
+              const destination = archiveMailboxFor(accountId)
+              const mailbox = mailboxOf(item)
+              if (!destination || destination === mailbox) {
+                toast.error('无法归档', '当前账户没有可用的归档文件夹')
+                return
+              }
+              moveMutation.mutate({ accountId, mailbox, uid: item.uid, destination })
+            }}
+            canArchive={canBulkArchive}
             onDelete={(item) => {
               const accountId = item.accountId ?? activeAccount?.id
               if (!accountId) return

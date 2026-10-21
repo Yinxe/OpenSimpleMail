@@ -20,6 +20,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Touch gestures on the message list: swipe left to archive (or delete when no archive folder exists), swipe right to toggle the star, and pull down at the top to refresh.
 - Expanded keyboard shortcuts (forward, star, read/unread, archive, delete, select, `g i`) and a `?` help overlay, also reachable from a keyboard button in the list header.
 - Unread badges: title count and dynamic favicon; optional desktop notifications for new mail while the tab is in the background, with a Settings toggle and permission request.
 - Batch selection in the message list: per-row checkboxes with Shift range, select-all, and bulk mark read/unread, archive and delete; the server applies each batch with one IMAP command.

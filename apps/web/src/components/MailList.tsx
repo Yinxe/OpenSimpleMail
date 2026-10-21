@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import type { RefObject } from 'react'
+import { type RefObject, useRef, useState } from 'react'
 import { displayAddress, formatListDate } from '@/lib/format'
 import { Avatar } from './Avatar'
 
@@ -60,6 +60,8 @@ interface MailListProps {
   onSelect: (item: MailListItem) => void
   onStar: (item: MailListItem) => void
   onToggleRead: (item: MailListItem) => void
+  onArchive: (item: MailListItem) => void
+  canArchive: boolean
   onDelete: (item: MailListItem) => void
   onPage: (page: number) => void
   onRefresh: () => void
@@ -126,6 +128,8 @@ export function MailList({
   onSelect,
   onStar,
   onToggleRead,
+  onArchive,
+  canArchive,
   onDelete,
   onPage,
   onRefresh,
@@ -144,6 +148,20 @@ export function MailList({
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const selectedOnPage = items.filter((item) => selectedRows.has(mailRowKey(item, activeAccountId)))
   const allSelected = items.length > 0 && selectedOnPage.length === items.length
+
+  const [swipe, setSwipe] = useState<{ key: string; dx: number } | null>(null)
+  const [pullDistance, setPullDistance] = useState(0)
+  const touchRef = useRef<{
+    key: string
+    x: number
+    y: number
+    horizontal: boolean | null
+    swiped: boolean
+  } | null>(null)
+  const swipeDx = useRef(0)
+  const suppressClick = useRef(0)
+  const pullStart = useRef<number | null>(null)
+  const pullDistanceRef = useRef(0)
 
   return (
     <section
@@ -274,7 +292,45 @@ export function MailList({
         </div>
       ) : null}
 
-      <div className="mail-list__body">
+      <div
+        className="mail-list__body"
+        onTouchStart={(event) => {
+          if (event.currentTarget.scrollTop > 0) return
+          const touch = event.touches[0]
+          pullStart.current = touch ? touch.clientY : null
+          pullDistanceRef.current = 0
+        }}
+        onTouchMove={(event) => {
+          if (pullStart.current === null) return
+          if (event.currentTarget.scrollTop > 0) {
+            pullDistanceRef.current = 0
+            setPullDistance(0)
+            return
+          }
+          const touch = event.touches[0]
+          if (!touch) return
+          const distance = touch.clientY - pullStart.current
+          const next = distance > 0 ? Math.min(70, distance * 0.5) : 0
+          pullDistanceRef.current = next
+          setPullDistance(next)
+        }}
+        onTouchEnd={() => {
+          if (pullDistanceRef.current >= 50) onRefresh()
+          pullStart.current = null
+          pullDistanceRef.current = 0
+          setPullDistance(0)
+        }}
+        onTouchCancel={() => {
+          pullStart.current = null
+          pullDistanceRef.current = 0
+          setPullDistance(0)
+        }}
+      >
+        {pullDistance > 0 ? (
+          <div className="mail-list__pull" style={{ height: pullDistance }}>
+            {pullDistance >= 50 ? '松开刷新' : '下拉刷新'}
+          </div>
+        ) : null}
         {loading ? <SkeletonRows /> : null}
 
         {!loading && error && items.length > 0 ? (
@@ -322,24 +378,95 @@ export function MailList({
               const rowKey = mailRowKey(item, activeAccountId)
               const selected = rowKey === selectedKey
               const checked = selectedRows.has(rowKey)
+              const swiping = swipe?.key === rowKey ? swipe.dx : 0
               return (
                 // biome-ignore lint/a11y/useSemanticElements: the row contains action buttons, so a button element would nest interactive controls
                 <div
                   key={rowKey}
                   className={`mail-row ${selected ? 'is-selected' : ''} ${
                     checked ? 'is-checked' : ''
-                  } ${item.unread ? 'is-unread' : ''}`}
+                  } ${item.unread ? 'is-unread' : ''} ${
+                    swiping < 0 ? 'is-swiping-left' : swiping > 0 ? 'is-swiping-right' : ''
+                  }`}
+                  style={
+                    swiping !== 0
+                      ? { transform: `translateX(${swiping}px)`, transition: 'none' }
+                      : undefined
+                  }
                   role="button"
                   tabIndex={0}
                   aria-current={selected ? 'true' : undefined}
-                  onClick={() => onSelect(item)}
+                  onClick={() => {
+                    if (Date.now() - suppressClick.current < 350) return
+                    onSelect(item)
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
                       onSelect(item)
                     }
                   }}
+                  onTouchStart={(event) => {
+                    const touch = event.touches[0]
+                    if (!touch) return
+                    touchRef.current = {
+                      key: rowKey,
+                      x: touch.clientX,
+                      y: touch.clientY,
+                      horizontal: null,
+                      swiped: false,
+                    }
+                  }}
+                  onTouchMove={(event) => {
+                    const start = touchRef.current
+                    const touch = event.touches[0]
+                    if (!start || start.key !== rowKey || !touch) return
+                    const dx = touch.clientX - start.x
+                    const dy = touch.clientY - start.y
+                    if (start.horizontal === null) {
+                      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
+                      start.horizontal = Math.abs(dx) > Math.abs(dy) + 4
+                    }
+                    if (!start.horizontal) return
+                    if (Math.abs(dx) > 12) start.swiped = true
+                    const clamped = Math.max(-96, Math.min(96, dx))
+                    swipeDx.current = clamped
+                    setSwipe({ key: rowKey, dx: clamped })
+                  }}
+                  onTouchEnd={() => {
+                    const start = touchRef.current
+                    touchRef.current = null
+                    setSwipe(null)
+                    if (!start || start.key !== rowKey || !start.swiped) return
+                    suppressClick.current = Date.now()
+                    const dx = swipeDx.current
+                    swipeDx.current = 0
+                    if (dx <= -72) {
+                      if (canArchive) onArchive(item)
+                      else onDelete(item)
+                    } else if (dx >= 72) {
+                      onStar(item)
+                    }
+                  }}
+                  onTouchCancel={() => {
+                    touchRef.current = null
+                    swipeDx.current = 0
+                    setSwipe(null)
+                  }}
                 >
+                  {swiping !== 0 ? (
+                    <span
+                      className={`mail-row__swipe-hint ${swiping < 0 ? 'is-left' : 'is-right'}`}
+                    >
+                      {swiping < 0
+                        ? canArchive
+                          ? '归档'
+                          : '删除'
+                        : item.starred
+                          ? '取消收藏'
+                          : '收藏'}
+                    </span>
+                  ) : null}
                   <span className="mail-row__check">
                     <input
                       type="checkbox"

@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 
 // apps/server/src/config and apps/server/dist/config are both four levels below
 // the repository root, so this works in dev, tests and the Docker image.

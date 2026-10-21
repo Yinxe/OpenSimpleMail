@@ -1424,6 +1424,17 @@ code {
   min-height: 0;
   overflow-y: auto;
   border-top: 1px solid var(--line);
+  overscroll-behavior-y: contain;
+}
+
+.mail-list__pull {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
 }
 
 .mail-row {
@@ -1436,7 +1447,10 @@ code {
   border-bottom: 1px solid var(--line);
   background: transparent;
   cursor: pointer;
-  transition: background 0.12s ease;
+  touch-action: pan-y;
+  transition:
+    background 0.12s ease,
+    transform 0.18s ease;
 }
 .mail-row:hover {
   background: var(--surface-2);
@@ -1451,8 +1465,32 @@ code {
 .mail-row.is-selected .mail-row__subject {
   color: var(--accent-ink);
 }
+.mail-row.is-swiping-left {
+  background: var(--danger-soft);
+}
+.mail-row.is-swiping-right {
+  background: var(--accent-soft);
+}
 .mail-row:focus-visible {
   outline-offset: -2px;
+}
+.mail-row__swipe-hint {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+.mail-row__swipe-hint.is-left {
+  right: 16px;
+  color: var(--danger);
+}
+.mail-row__swipe-hint.is-right {
+  left: 16px;
+  color: var(--accent-ink);
 }
 
 .mail-row__check {
