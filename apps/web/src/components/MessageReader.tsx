@@ -614,12 +614,7 @@ export function MessageReader({
             </div>
           ) : null}
 
-          <div
-            id="reader-body"
-            role="tabpanel"
-            aria-labelledby={`reader-tab-${mode}`}
-            tabIndex={0}
-          >
+          <div id="reader-body" role="tabpanel" aria-labelledby={`reader-tab-${mode}`}>
             {mode === 'full' ? (
               message.html ? (
                 <EmailFrame html={message.html} allowImages={allowImages} />

@@ -129,6 +129,8 @@ function formatSavedAt(timestamp: number): string {
   })
 }
 
+const UNDO_SEND_MS = 5000
+
 export function Composer({
   open,
   mode,
@@ -154,6 +156,10 @@ export function Composer({
   const [error, setError] = useState('')
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const [bodyVersion, setBodyVersion] = useState(0)
+  const [sendDeadline, setSendDeadline] = useState<number | null>(null)
+  const [sendRemaining, setSendRemaining] = useState(0)
+  const sendTimer = useRef<number | null>(null)
+  const sendInFlight = useRef(false)
   const fallbackAccountId = defaultAccountId ?? accounts[0]?.id ?? ''
   const sourceKey = source ? (source.messageId ?? `${source.mailbox}:${source.uid}`) : 'new'
   const draftKey = user ? composeDraftKey(user.id, mode, sourceKey) : null
@@ -265,8 +271,19 @@ export function Composer({
   useEffect(() => {
     return () => {
       persistRef.current?.()
+      if (sendTimer.current !== null) window.clearTimeout(sendTimer.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (!sendDeadline) return
+    const tick = () => {
+      setSendRemaining(Math.max(0, Math.ceil((sendDeadline - Date.now()) / 1000)))
+    }
+    tick()
+    const timer = window.setInterval(tick, 250)
+    return () => window.clearInterval(timer)
+  }, [sendDeadline])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -291,7 +308,7 @@ export function Composer({
   }
 
   function discardDraft() {
-    if (!draftKey) return
+    if (sending || !draftKey) return
     if (!window.confirm('丢弃这封草稿？此操作不可撤销。')) return
     clearDraft(draftKey)
     dirtyRef.current = false
@@ -325,7 +342,39 @@ export function Composer({
     event.target.value = ''
   }
 
-  async function handleSend() {
+  function cancelPendingSend() {
+    if (sendTimer.current === null) return
+    window.clearTimeout(sendTimer.current)
+    sendTimer.current = null
+    sendInFlight.current = false
+    setSendDeadline(null)
+    setSendRemaining(0)
+    setSending(false)
+    toast.info('已取消发送', '邮件还在编辑窗口里')
+  }
+
+  async function deliver(form: FormData, account: string) {
+    try {
+      await api.postForm<SendResultDto>(`/accounts/${account}/send`, form)
+      sentRef.current = true
+      if (draftKey) clearDraft(draftKey)
+      setDraftSavedAt(null)
+      toast.success(
+        '邮件已发送',
+        `发件邮箱：${accounts.find((item) => item.id === account)?.email ?? ''}`,
+      )
+      onSent(account)
+      onClose()
+    } catch (caught) {
+      sendInFlight.current = false
+      setError(errorMessage(caught))
+      setSending(false)
+      setSendDeadline(null)
+    }
+  }
+
+  function handleSend() {
+    if (sendInFlight.current) return
     setError('')
     if (!accountId) {
       setError('请选择一个发件邮箱')
@@ -355,23 +404,21 @@ export function Composer({
     }
     for (const file of files) form.append('attachments', file)
 
+    sendInFlight.current = true
     setSending(true)
-    try {
-      await api.postForm<SendResultDto>(`/accounts/${accountId}/send`, form)
-      sentRef.current = true
-      if (draftKey) clearDraft(draftKey)
-      setDraftSavedAt(null)
-      toast.success(
-        '邮件已发送',
-        `发件邮箱：${accounts.find((item) => item.id === accountId)?.email ?? ''}`,
-      )
-      onSent(accountId)
-      onClose()
-    } catch (caught) {
-      setError(errorMessage(caught))
-    } finally {
-      setSending(false)
-    }
+    setSendDeadline(Date.now() + UNDO_SEND_MS)
+    setSendRemaining(Math.ceil(UNDO_SEND_MS / 1000))
+    toast.info('邮件将在 5 秒后发送', '发送前可以撤销', {
+      label: '撤销',
+      onClick: cancelPendingSend,
+    })
+
+    const account = accountId
+    sendTimer.current = window.setTimeout(() => {
+      sendTimer.current = null
+      setSendDeadline(null)
+      void deliver(form, account)
+    }, UNDO_SEND_MS)
   }
 
   const title =
@@ -397,17 +444,31 @@ export function Composer({
               type="button"
               className="button button--ghost button--sm"
               onClick={() => fileRef.current?.click()}
+              disabled={sending}
             >
               <Paperclip size={15} />
               添加附件
               {files.length > 0 ? <span className="composer__count">{files.length}</span> : null}
             </button>
             <span className="composer__hint">
-              Ctrl / ⌘ + Enter 发送
+              {sending && sendRemaining > 0
+                ? `${sendRemaining} 秒后发送 · 可以撤销`
+                : sending
+                  ? '正在发送…'
+                  : 'Ctrl / ⌘ + Enter 发送'}
               {draftSavedAt ? ` · 草稿已保存 ${formatSavedAt(draftSavedAt)}` : ''}
             </span>
           </div>
           <div className="composer__foot-right">
+            {sending && sendRemaining > 0 ? (
+              <button
+                type="button"
+                className="button button--ghost button--sm"
+                onClick={cancelPendingSend}
+              >
+                撤销发送
+              </button>
+            ) : null}
             {draftSavedAt ? (
               <button
                 type="button"
@@ -433,7 +494,7 @@ export function Composer({
               disabled={sending}
             >
               {sending ? <Spinner /> : <Send size={16} />}
-              发送
+              {sending ? (sendRemaining > 0 ? `发送中 ${sendRemaining}s` : '发送中') : '发送'}
             </button>
           </div>
         </div>
@@ -611,6 +672,7 @@ export function Composer({
                   type="button"
                   onClick={() => setFiles(files.filter((_, itemIndex) => itemIndex !== index))}
                   aria-label={`移除 ${file.name}`}
+                  disabled={sending}
                 >
                   <Trash2 size={13} />
                 </button>
