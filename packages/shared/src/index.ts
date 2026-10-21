@@ -87,6 +87,8 @@ export interface AccountDto {
   username: string
   kind: AccountKind
   color: string
+  /** Plain-text signature appended to new messages and placed above quotes. */
+  signature: string
   hasPassword: boolean
   imap: ServerSettingsDto
   smtp: ServerSettingsDto
@@ -127,6 +129,11 @@ export interface MessageSummaryDto {
   unread: boolean
   starred: boolean
   hasAttachments: boolean
+  /**
+   * Folder the message actually lives in. Always set by the server so views
+   * that merge several folders (the starred view) can act on a single row.
+   */
+  mailbox?: string
   preview?: string
   size?: number
 }
@@ -186,3 +193,15 @@ export const SPECIAL_USE = {
   flagged: '\\Flagged',
   all: '\\All',
 } as const
+
+/**
+ * Virtual mailbox path that aggregates flagged messages. It never maps to a
+ * real IMAP folder: the server resolves it by searching every folder (or the
+ * provider's `\Flagged` folder when one exists) and returns real folder paths
+ * on each summary.
+ */
+export const STARRED_MAILBOX = '__starred__'
+
+export function isStarredMailbox(path: string | null | undefined): boolean {
+  return path === STARRED_MAILBOX
+}

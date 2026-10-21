@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   smtp_port  INTEGER NOT NULL DEFAULT 465,
   smtp_secure INTEGER NOT NULL DEFAULT 1,
   color      TEXT NOT NULL DEFAULT '#0f766e',
+  signature  TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -100,6 +101,13 @@ export class DatabaseService implements OnModuleDestroy {
     const userColumns = this.db.prepare('PRAGMA table_info(users)').all() as { name: string }[]
     if (!userColumns.some((column) => column.name === 'is_admin')) {
       this.db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+    }
+
+    const accountColumns = this.db.prepare('PRAGMA table_info(accounts)').all() as {
+      name: string
+    }[]
+    if (!accountColumns.some((column) => column.name === 'signature')) {
+      this.db.exec("ALTER TABLE accounts ADD COLUMN signature TEXT NOT NULL DEFAULT ''")
     }
 
     const settings = this.db

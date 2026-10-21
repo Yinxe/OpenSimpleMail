@@ -39,6 +39,7 @@ export class DemoService {
       smtp_port: 465,
       smtp_secure: 1,
       color: '#b45309',
+      signature: '',
       created_at: now,
       updated_at: now,
     }
@@ -47,11 +48,11 @@ export class DemoService {
         `INSERT INTO accounts (
           id, user_id, kind, name, email, username, secret,
           imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure,
-          color, created_at, updated_at
+          color, signature, created_at, updated_at
         ) VALUES (
           @id, @user_id, @kind, @name, @email, @username, @secret,
           @imap_host, @imap_port, @imap_secure, @smtp_host, @smtp_port, @smtp_secure,
-          @color, @created_at, @updated_at
+          @color, @signature, @created_at, @updated_at
         )`,
       )
       .run(row)

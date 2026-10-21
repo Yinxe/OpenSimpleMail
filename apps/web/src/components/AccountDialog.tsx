@@ -99,6 +99,7 @@ interface FormState {
   imap: ServerSettingsDto & { portText: string }
   smtp: ServerSettingsDto & { portText: string }
   color: string
+  signature: string
   verify: boolean
 }
 
@@ -121,6 +122,7 @@ function initialState(account?: AccountDto | null): FormState {
       portText: String(account?.smtp.port ?? 465),
     },
     color: account?.color ?? (COLORS[0] as string),
+    signature: account?.signature ?? '',
     verify: true,
   }
 }
@@ -193,6 +195,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
       imap: { host: form.imap.host.trim(), port: imapPort, secure: form.imap.secure },
       smtp: { host: form.smtp.host.trim(), port: smtpPort, secure: form.smtp.secure },
       color: form.color,
+      signature: form.signature.trim(),
       ...(editing ? {} : { skipTest: !form.verify }),
     }
 
@@ -392,6 +395,18 @@ export function AccountDialog({ open, account, onClose, onSaved }: AccountDialog
             </label>
           </div>
         </div>
+
+        <label className="field field--wide">
+          <span className="field__label">邮件签名（纯文本，可选）</span>
+          <textarea
+            className="input"
+            rows={3}
+            maxLength={2000}
+            value={form.signature}
+            onChange={(event) => patch({ signature: event.target.value })}
+            placeholder="例如：Yinx · 工作日 10:00–19:00"
+          />
+        </label>
 
         <div className="account-form__footer-row">
           <div className="color-picker">

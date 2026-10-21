@@ -146,6 +146,35 @@ ${button('查看 Issue', 'https://github.com/')}
 
   messages.push(
     message({
+      id: 'otp-login',
+      mailbox: 'INBOX',
+      subject: 'OpenSimpleMail 登录验证码 · 482913',
+      from: [{ name: 'OpenSimpleMail 安全中心', address: 'security@opensimplemail.local' }],
+      to: [me],
+      cc: [],
+      bcc: [],
+      replyTo: [],
+      date: at(0, 9, 5),
+      flags: [],
+      text: '你的登录验证码是 482913，10 分钟内有效。请勿将验证码转发给他人。',
+      html: emailShell({
+        title: '安全验证',
+        accent: '#c4553b',
+        body: `${paragraph('你正在登录 <strong>OpenSimpleMail</strong>，请使用下面的验证码完成验证：')}
+<div style="margin:18px 0;padding:20px 18px;border:1px solid #e4ded2;border-radius:10px;background:#faf7f0;text-align:center;">
+<div style="font-size:11px;letter-spacing:2px;color:#8a8174;">登录验证码</div>
+<div style="margin-top:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:38px;letter-spacing:10px;font-weight:600;color:#24211d;">482913</div>
+<div style="margin-top:10px;font-size:12px;color:#8a8174;">10 分钟内有效</div>
+</div>
+<p style="margin:0;color:#6b7280;font-size:13px;">如果这不是你本人的操作，请忽略这封邮件，并检查账号安全设置。</p>`,
+        footer: '这是一封系统自动发送的邮件，请勿直接回复。',
+      }),
+      attachments: [],
+    }),
+  )
+
+  messages.push(
+    message({
       id: 'figma-comment',
       mailbox: 'INBOX',
       subject: 'Figma：Mailbox redesign 有 2 条新评论',

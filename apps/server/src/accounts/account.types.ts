@@ -15,6 +15,7 @@ export interface AccountRow {
   smtp_port: number
   smtp_secure: number
   color: string
+  signature: string
   created_at: string
   updated_at: string
 }
@@ -27,6 +28,7 @@ export function toAccountDto(row: AccountRow): AccountDto {
     username: row.username,
     kind: row.kind,
     color: row.color,
+    signature: row.signature ?? '',
     hasPassword: row.secret.length > 0,
     imap: { host: row.imap_host, port: row.imap_port, secure: row.imap_secure === 1 },
     smtp: { host: row.smtp_host, port: row.smtp_port, secure: row.smtp_secure === 1 },

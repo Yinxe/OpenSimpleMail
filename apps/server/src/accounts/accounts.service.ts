@@ -90,6 +90,7 @@ export class AccountsService {
       smtp_port: dto.smtp.port,
       smtp_secure: dto.smtp.secure ? 1 : 0,
       color: dto.color ?? DEFAULT_COLORS[this.list(userId).length % DEFAULT_COLORS.length],
+      signature: dto.signature?.trim() ?? '',
       created_at: now,
       updated_at: now,
     }
@@ -99,11 +100,11 @@ export class AccountsService {
         `INSERT INTO accounts (
           id, user_id, kind, name, email, username, secret,
           imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure,
-          color, created_at, updated_at
+          color, signature, created_at, updated_at
         ) VALUES (
           @id, @user_id, @kind, @name, @email, @username, @secret,
           @imap_host, @imap_port, @imap_secure, @smtp_host, @smtp_port, @smtp_secure,
-          @color, @created_at, @updated_at
+          @color, @signature, @created_at, @updated_at
         )`,
       )
       .run(row)
@@ -143,6 +144,7 @@ export class AccountsService {
       smtp_port: smtp.port,
       smtp_secure: smtp.secure ? 1 : 0,
       color: dto.color ?? row.color,
+      signature: dto.signature?.trim() ?? row.signature,
       updated_at: new Date().toISOString(),
     }
 
@@ -152,7 +154,7 @@ export class AccountsService {
           name = @name, username = @username, secret = @secret,
           imap_host = @imap_host, imap_port = @imap_port, imap_secure = @imap_secure,
           smtp_host = @smtp_host, smtp_port = @smtp_port, smtp_secure = @smtp_secure,
-          color = @color, updated_at = @updated_at
+          color = @color, signature = @signature, updated_at = @updated_at
          WHERE id = @id`,
       )
       .run(next)

@@ -32,6 +32,7 @@ import { Spinner } from '@/components/Spinner'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { isDeleteConfirmSkipped, setDeleteConfirmSkipped } from '@/lib/deleteGuard'
 import { type ThemeChoice, useTheme } from '@/lib/theme'
 import { useToast } from '@/lib/toast'
 
@@ -63,6 +64,11 @@ export function SettingsPage() {
   })
   const [prefForm, setPrefForm] = useState<UserPreferencesDto>(preferences)
   const [savingPrefs, setSavingPrefs] = useState(false)
+  const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
+
+  useEffect(() => {
+    setSkipDeleteConfirm(isDeleteConfirmSkipped(user?.id))
+  }, [user?.id])
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -534,6 +540,37 @@ export function SettingsPage() {
                 保存偏好
               </button>
             </div>
+          </div>
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card__head">
+            <div>
+              <h2>本次会话</h2>
+              <p>这里的开关只影响当前浏览器会话，刷新页面后恢复默认。</p>
+            </div>
+            <span className="badge">临时</span>
+          </div>
+          <div className="pref-switches">
+            <label className="switch-row">
+              <span className="switch-row__text">
+                <strong>删除邮件前二次确认</strong>
+                <small>
+                  关闭后，删除会立即执行，不再弹出确认框。也可以在删除确认框里取消勾选。
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                className="switch"
+                checked={!skipDeleteConfirm}
+                onChange={(event) => {
+                  if (!user) return
+                  const skipped = !event.target.checked
+                  setDeleteConfirmSkipped(user.id, skipped)
+                  setSkipDeleteConfirm(skipped)
+                }}
+              />
+            </label>
           </div>
         </section>
 

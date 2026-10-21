@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import type {
-  MailboxDto,
-  MessageDetailDto,
-  MessagePageDto,
-  MessageSummaryDto,
-  SendResultDto,
-  TestResultDto,
+import {
+  type MailboxDto,
+  type MessageDetailDto,
+  type MessagePageDto,
+  type MessageSummaryDto,
+  type SendResultDto,
+  STARRED_MAILBOX,
+  type TestResultDto,
 } from '@osm/shared'
 import type { AccountRow } from '../accounts/account.types'
 import type {
@@ -21,6 +22,13 @@ import { DEMO_FOLDERS, type DemoMessage } from './demo.fixtures'
 import type { DemoService } from './demo.service'
 
 const STARRED = 'Starred'
+const STARRED_EXCLUDED = new Set(['Trash', 'Junk', 'Drafts'])
+
+// Mirrors the IMAP provider: flagged mail that already sits in Trash, Junk or
+// Drafts is not something people keep "for later".
+function isStarred(message: DemoMessage): boolean {
+  return message.flags.includes('\\Flagged') && !STARRED_EXCLUDED.has(message.mailbox)
+}
 
 function toSummary(message: DemoMessage): MessageSummaryDto {
   return {
@@ -33,6 +41,7 @@ function toSummary(message: DemoMessage): MessageSummaryDto {
     unread: !message.flags.includes('\\Seen'),
     starred: message.flags.includes('\\Flagged'),
     hasAttachments: message.attachments.some((item) => !item.inline),
+    mailbox: message.mailbox,
     preview: message.text.replace(/\s+/g, ' ').trim().slice(0, 180),
   }
 }
@@ -60,7 +69,7 @@ export class DemoProvider implements MailProvider {
     return DEMO_FOLDERS.map((folder) => {
       const items =
         folder.path === STARRED
-          ? messages.filter((message) => message.flags.includes('\\Flagged'))
+          ? messages.filter((message) => isStarred(message))
           : messages.filter((message) => message.mailbox === folder.path)
       return {
         path: folder.path,
@@ -75,12 +84,9 @@ export class DemoProvider implements MailProvider {
 
   async listMessages(options: ListMessagesOptions): Promise<MessagePageDto> {
     const query = options.query?.trim().toLowerCase()
+    const starred = options.mailbox === STARRED || options.mailbox === STARRED_MAILBOX
     const items = this.store.messages
-      .filter((message) =>
-        options.mailbox === STARRED
-          ? message.flags.includes('\\Flagged')
-          : message.mailbox === options.mailbox,
-      )
+      .filter((message) => (starred ? isStarred(message) : message.mailbox === options.mailbox))
       .filter((message) => {
         if (!query) return true
         const haystack = [

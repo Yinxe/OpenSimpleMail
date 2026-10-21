@@ -1,20 +1,38 @@
 import type { AccountDto, MessageDetailDto } from '@osm/shared'
 import {
+  AlignLeft,
   Archive,
   ArrowLeft,
+  Check,
+  Clock3,
+  Copy,
   Download,
   FileText,
   Forward,
   ImageOff,
+  KeyRound,
+  LayoutTemplate,
   Mail,
   MailOpen,
   Paperclip,
   Reply,
+  ReplyAll,
+  ShieldCheck,
   Star,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { copyToClipboard } from '@/lib/clipboard'
 import { addressLine, displayAddress, formatBytes, formatFullDate } from '@/lib/format'
+import {
+  type ContentBlock,
+  type ContentInline,
+  htmlToPlainText,
+  messageToBlocks,
+} from '@/lib/message-content'
+import { READER_MODES, type ReaderMode, readReaderMode, writeReaderMode } from '@/lib/reader-mode'
+import { useToast } from '@/lib/toast'
+import { findVerificationCode, type VerificationResult } from '@/lib/verification-code'
 import { Avatar } from './Avatar'
 import { Spinner } from './Spinner'
 
@@ -26,11 +44,20 @@ interface MessageReaderProps {
   archivePath: string | null
   onClose: () => void
   onReply: (message: MessageDetailDto) => void
+  onReplyAll: (message: MessageDetailDto) => void
   onForward: (message: MessageDetailDto) => void
   onStar: (message: MessageDetailDto) => void
   onDelete: (message: MessageDetailDto) => void
   onToggleRead: (message: MessageDetailDto) => void
   onArchive: (message: MessageDetailDto, destination: string) => void
+}
+
+const EMPTY_CODE_RESULT: VerificationResult = {
+  code: null,
+  candidates: [],
+  context: null,
+  expiry: null,
+  source: null,
 }
 
 const FRAME_STYLES = `
@@ -114,6 +141,188 @@ function EmailFrame({ html, allowImages }: { html: string; allowImages: boolean 
   )
 }
 
+function renderInlines(inlines: ContentInline[]) {
+  return inlines.map((inline, index) => {
+    if (typeof inline === 'string') {
+      return <Fragment key={index}>{inline}</Fragment>
+    }
+    return (
+      <a key={index} href={inline.href} target="_blank" rel="noreferrer noopener">
+        {inline.text}
+      </a>
+    )
+  })
+}
+
+function SimpleBody({ blocks }: { blocks: ContentBlock[] }) {
+  if (blocks.length === 0) {
+    return <p className="reader__empty-body">这封邮件没有可显示的正文。</p>
+  }
+
+  return (
+    <div className="reader-simple">
+      {blocks.map((block, index) => {
+        if (block.kind === 'divider') return <hr key={index} />
+        if (block.kind === 'heading') {
+          return (
+            <h2 key={index} className="reader-simple__heading">
+              {renderInlines(block.inlines)}
+            </h2>
+          )
+        }
+        if (block.kind === 'quote') {
+          return (
+            <blockquote key={index} className="reader-simple__quote">
+              {renderInlines(block.inlines)}
+            </blockquote>
+          )
+        }
+        if (block.kind === 'list-item') {
+          return (
+            <p key={index} className="reader-simple__item">
+              <span className="reader-simple__bullet" aria-hidden="true">
+                •
+              </span>
+              <span>{renderInlines(block.inlines)}</span>
+            </p>
+          )
+        }
+        return (
+          <p key={index} className="reader-simple__paragraph">
+            {renderInlines(block.inlines)}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
+interface VerificationBodyProps {
+  result: VerificationResult
+  senderName: string
+  senderAddress: string
+  onShowFull: () => void
+  onShowText: () => void
+}
+
+function VerificationBody({
+  result,
+  senderName,
+  senderAddress,
+  onShowFull,
+  onShowText,
+}: VerificationBodyProps) {
+  const toast = useToast()
+  const [copied, setCopied] = useState<string | null>(null)
+  const timerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  async function copy(code: string) {
+    const copiedOk = await copyToClipboard(code)
+    if (!copiedOk) {
+      toast.error('复制失败', '请手动选中验证码后复制')
+      return
+    }
+    setCopied(code)
+    toast.success('验证码已复制', code)
+    if (timerRef.current) window.clearTimeout(timerRef.current)
+    timerRef.current = window.setTimeout(() => setCopied(null), 2200)
+  }
+
+  const code = result.code
+  if (!code) {
+    return (
+      <div className="otp otp--empty">
+        <span className="otp__empty-mark" aria-hidden="true">
+          <KeyRound size={24} />
+        </span>
+        <h2>没有识别到验证码</h2>
+        <p>这封邮件里没有找到常见的验证码格式。可以回到完整内容手动查看。</p>
+        <div className="otp__empty-actions">
+          <button type="button" className="button button--soft button--sm" onClick={onShowFull}>
+            查看完整内容
+          </button>
+          <button type="button" className="button button--ghost button--sm" onClick={onShowText}>
+            查看简约文字
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const alternatives = result.candidates.filter((candidate) => candidate.code !== code).slice(0, 3)
+
+  return (
+    <div className="otp">
+      <div className="otp__card">
+        <div className="otp__head">
+          <span className="otp__icon" aria-hidden="true">
+            <KeyRound size={17} />
+          </span>
+          <span className="otp__label">验证码</span>
+          {result.expiry ? (
+            <span className="otp__expiry">
+              <Clock3 size={12} aria-hidden="true" />
+              {result.expiry}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="otp__code">{code}</div>
+
+        <button
+          type="button"
+          className={`button otp__copy ${copied === code ? 'button--soft' : 'button--primary'}`}
+          onClick={() => copy(code)}
+          aria-live="polite"
+        >
+          {copied === code ? <Check size={16} /> : <Copy size={16} />}
+          {copied === code ? '已复制' : '复制验证码'}
+        </button>
+
+        {result.context ? <p className="otp__context">{result.context}</p> : null}
+
+        <div className="otp__foot">
+          <span className="otp__sender" title={senderAddress}>
+            来自 {senderName}
+          </span>
+          <button type="button" onClick={onShowFull}>
+            查看完整内容
+          </button>
+        </div>
+      </div>
+
+      {alternatives.length > 0 ? (
+        <div className="otp__alternatives">
+          <span>其他候选</span>
+          {alternatives.map((candidate) => (
+            <button
+              key={candidate.code}
+              type="button"
+              className="otp__alt"
+              onClick={() => copy(candidate.code)}
+              title={`复制 ${candidate.code}`}
+            >
+              <code>{candidate.code}</code>
+              <Copy size={12} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <p className="otp__safe">
+        <ShieldCheck size={12} aria-hidden="true" />
+        验证码仅用于本次验证，请勿转发给他人。
+      </p>
+    </div>
+  )
+}
+
 export function MessageReader({
   account,
   message,
@@ -122,6 +331,7 @@ export function MessageReader({
   archivePath,
   onClose,
   onReply,
+  onReplyAll,
   onForward,
   onStar,
   onDelete,
@@ -129,11 +339,27 @@ export function MessageReader({
   onArchive,
 }: MessageReaderProps) {
   const [allowImages, setAllowImages] = useState(defaultAllowImages)
+  const [mode, setMode] = useState<ReaderMode>(readReaderMode)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset the image preference for each message
   useEffect(() => {
     setAllowImages(defaultAllowImages)
   }, [defaultAllowImages, message?.uid, message?.mailbox])
+
+  useEffect(() => {
+    writeReaderMode(mode)
+  }, [mode])
+
+  const codeResult = useMemo(() => {
+    if (!message) return EMPTY_CODE_RESULT
+    return findVerificationCode({
+      subject: message.subject,
+      text: message.text,
+      htmlText: message.html ? htmlToPlainText(message.html) : '',
+    })
+  }, [message])
+
+  const simpleBlocks = useMemo(() => (message ? messageToBlocks(message) : []), [message])
 
   if (loading) {
     return (
@@ -180,6 +406,15 @@ export function MessageReader({
     ? `/api/accounts/${account.id}/messages/${message.uid}/attachments`
     : ''
 
+  const modeHint =
+    mode === 'text'
+      ? '已去除图片与样式'
+      : mode === 'code'
+        ? codeResult.code
+          ? '已自动识别'
+          : '未识别到验证码'
+        : ''
+
   return (
     <section className="reader">
       <header className="reader__toolbar">
@@ -205,8 +440,9 @@ export function MessageReader({
             type="button"
             className={`icon-button ${message.starred ? 'is-starred' : ''}`}
             onClick={() => onStar(message)}
-            title={message.starred ? '取消星标' : '添加星标'}
-            aria-label={message.starred ? '取消星标' : '添加星标'}
+            title={message.starred ? '取消收藏' : '收藏（可在左侧「收藏」查看）'}
+            aria-label={message.starred ? '取消收藏' : '收藏'}
+            aria-pressed={message.starred}
           >
             <Star size={16} fill={message.starred ? 'currentColor' : 'none'} />
           </button>
@@ -238,6 +474,14 @@ export function MessageReader({
             onClick={() => onReply(message)}
           >
             <Reply size={15} /> 回复
+          </button>
+          <button
+            type="button"
+            className="button button--ghost button--sm"
+            onClick={() => onReplyAll(message)}
+            title="回复发件人和所有收件人（A）"
+          >
+            <ReplyAll size={15} /> 全部回复
           </button>
           <button
             type="button"
@@ -281,7 +525,38 @@ export function MessageReader({
             </p>
           ) : null}
 
-          {blockedImages ? (
+          <div className="reader__viewbar">
+            <div className="reader-modes" role="tablist" aria-label="正文渲染方式">
+              {READER_MODES.map((item) => {
+                const Icon =
+                  item.value === 'full'
+                    ? LayoutTemplate
+                    : item.value === 'text'
+                      ? AlignLeft
+                      : KeyRound
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === item.value}
+                    aria-controls="reader-body"
+                    className={`reader-mode ${mode === item.value ? 'is-active' : ''}`}
+                    onClick={() => setMode(item.value)}
+                  >
+                    <Icon size={14} aria-hidden="true" />
+                    <span>{item.label}</span>
+                    {item.value === 'code' && codeResult.code ? (
+                      <span className="reader-mode__dot" title="已识别到验证码" />
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+            {modeHint ? <span className="reader__viewhint">{modeHint}</span> : null}
+          </div>
+
+          {mode === 'full' && blockedImages ? (
             <div className="reader__notice">
               <ImageOff size={16} />
               <span>远程图片已被拦截，以避免发件人追踪你的阅读行为。</span>
@@ -324,11 +599,25 @@ export function MessageReader({
             </div>
           ) : null}
 
-          {message.html ? (
-            <EmailFrame html={message.html} allowImages={allowImages} />
-          ) : (
-            <pre className="reader__text">{message.text ?? '(这封邮件没有可显示的正文)'}</pre>
-          )}
+          <div id="reader-body" role="tabpanel">
+            {mode === 'full' ? (
+              message.html ? (
+                <EmailFrame html={message.html} allowImages={allowImages} />
+              ) : (
+                <pre className="reader__text">{message.text ?? '(这封邮件没有可显示的正文)'}</pre>
+              )
+            ) : mode === 'text' ? (
+              <SimpleBody blocks={simpleBlocks} />
+            ) : (
+              <VerificationBody
+                result={codeResult}
+                senderName={senderName}
+                senderAddress={sender?.address ?? ''}
+                onShowFull={() => setMode('full')}
+                onShowText={() => setMode('text')}
+              />
+            )}
+          </div>
         </article>
       </div>
     </section>

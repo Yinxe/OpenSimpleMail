@@ -467,6 +467,59 @@ describe('demo mailbox', () => {
     expect(updated.body.starred).toBe(true)
   })
 
+  it('aggregates starred messages in the virtual starred mailbox', async () => {
+    const page = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=50`,
+    )
+    const candidates = page.body.messages.filter((item) => !item.starred)
+    const first = candidates[0]
+    const second = candidates[1]
+    if (!first || !second) throw new Error('demo inbox is too small')
+
+    const setFlag = (uid: number, flagged: boolean) =>
+      client.json(`/accounts/${account.id}/messages/${uid}/flags?mailbox=INBOX`, post({ flagged }))
+
+    expect((await setFlag(first.uid, true)).status).toBe(204)
+    expect((await setFlag(second.uid, true)).status).toBe(204)
+
+    const starred = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=__starred__&page=1&pageSize=50`,
+    )
+    expect(starred.status).toBe(200)
+    expect(starred.body.mailbox).toBe('__starred__')
+    const firstHit = starred.body.messages.find((item) => item.uid === first.uid)
+    expect(firstHit?.mailbox).toBe('INBOX')
+    expect(firstHit?.starred).toBe(true)
+    expect(starred.body.messages.every((item) => item.starred)).toBe(true)
+
+    // Search inside the starred view keeps the flagged filter.
+    const search = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=__starred__&page=1&pageSize=50&q=${encodeURIComponent(
+        first.subject.slice(0, 4),
+      )}`,
+    )
+    expect(search.status).toBe(200)
+    expect(search.body.messages.every((item) => item.starred)).toBe(true)
+
+    // Deleting a starred message moves it to Trash and drops it from the view.
+    const deleted = await client.json<{ movedTo?: string }>(
+      `/accounts/${account.id}/messages/${second.uid}?mailbox=INBOX`,
+      { method: 'DELETE' },
+    )
+    expect(deleted.body.movedTo).toBe('Trash')
+    const afterDelete = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=__starred__&page=1&pageSize=50`,
+    )
+    expect(afterDelete.body.messages.some((item) => item.uid === second.uid)).toBe(false)
+
+    // Un-starring removes the message from the view as well.
+    expect((await setFlag(first.uid, false)).status).toBe(204)
+    const afterUnstar = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=__starred__&page=1&pageSize=50`,
+    )
+    expect(afterUnstar.body.messages.some((item) => item.uid === first.uid)).toBe(false)
+  })
+
   it('searches messages and downloads an attachment', async () => {
     const search = await client.json<MessagePageDto>(
       `/accounts/${account.id}/messages?mailbox=INBOX&page=1&pageSize=20&q=${encodeURIComponent(
@@ -555,19 +608,25 @@ describe('demo mailbox', () => {
         password: 'app-password',
         imap: { host: 'imap.example.com', port: 993, secure: true },
         smtp: { host: 'smtp.example.com', port: 465, secure: true },
+        signature: '— Yinx',
         skipTest: true,
       }),
     })
     expect(created.status).toBe(201)
     expect(created.body.hasPassword).toBe(true)
+    expect(created.body.signature).toBe('— Yinx')
     expect(JSON.stringify(created.body)).not.toContain('app-password')
 
     const updated = await client.json<AccountDto>(`/accounts/${created.body.id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name: 'Renamed IMAP' }),
+      body: JSON.stringify({
+        name: 'Renamed IMAP',
+        signature: '— Yinx\nSent from OpenSimpleMail',
+      }),
     })
     expect(updated.status).toBe(200)
     expect(updated.body.name).toBe('Renamed IMAP')
+    expect(updated.body.signature).toBe('— Yinx\nSent from OpenSimpleMail')
 
     const removed = await client.json(`/accounts/${created.body.id}`, { method: 'DELETE' })
     expect(removed.status).toBe(204)

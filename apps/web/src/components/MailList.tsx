@@ -1,5 +1,6 @@
 import type { MessageSummaryDto } from '@osm/shared'
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Inbox,
@@ -42,6 +43,8 @@ interface MailListProps {
   onPage: (page: number) => void
   onRefresh: () => void
   refreshHint?: string
+  error?: string | null
+  onRetry: () => void
   onMenu?: () => void
   emptyTitle?: string
   emptyBody?: string
@@ -90,6 +93,8 @@ export function MailList({
   onPage,
   onRefresh,
   refreshHint,
+  error,
+  onRetry,
   onMenu,
   emptyTitle,
   emptyBody,
@@ -156,7 +161,34 @@ export function MailList({
       <div className="mail-list__body">
         {loading ? <SkeletonRows /> : null}
 
-        {!loading && items.length === 0 ? (
+        {!loading && error && items.length > 0 ? (
+          <div className="mail-list__error-banner" role="alert">
+            <AlertTriangle size={14} />
+            <span>刷新失败：{error}</span>
+            <button type="button" onClick={onRetry}>
+              重试
+            </button>
+          </div>
+        ) : null}
+
+        {!loading && error && items.length === 0 ? (
+          <div className="empty-state empty-state--error">
+            <span className="empty-state__icon">
+              <AlertTriangle size={26} />
+            </span>
+            <h3>无法加载邮件</h3>
+            <p>{error}</p>
+            <button
+              type="button"
+              className="button button--soft button--sm empty-state__retry"
+              onClick={onRetry}
+            >
+              重试
+            </button>
+          </div>
+        ) : null}
+
+        {!loading && !error && items.length === 0 ? (
           <div className="empty-state">
             <span className="empty-state__icon">
               <Inbox size={26} />
@@ -169,7 +201,9 @@ export function MailList({
         {!loading
           ? items.map((item) => {
               const sender = item.from[0]
-              const rowKey = `${item.accountId ?? 'local'}:${item.uid}`
+              // UIDs are only unique inside a mailbox, and the starred view
+              // merges several folders, so the folder is part of the key.
+              const rowKey = `${item.accountId ?? 'local'}:${item.mailbox ?? 'local'}:${item.uid}`
               const selected = rowKey === selectedKey
               return (
                 // biome-ignore lint/a11y/useSemanticElements: the row contains action buttons, so a button element would nest interactive controls
@@ -228,8 +262,9 @@ export function MailList({
                     <button
                       type="button"
                       className={`row-action ${item.starred ? 'is-on' : ''}`}
-                      title={item.starred ? '取消星标' : '添加星标'}
-                      aria-label={item.starred ? '取消星标' : '添加星标'}
+                      title={item.starred ? '取消收藏' : '收藏（可在左侧「收藏」查看）'}
+                      aria-label={item.starred ? '取消收藏' : '收藏'}
+                      aria-pressed={item.starred}
                       onClick={(event) => {
                         event.stopPropagation()
                         onStar(item)

@@ -1,14 +1,13 @@
-import type { AccountDto, MessageDetailDto, SendResultDto } from '@osm/shared'
+import type { AccountDto, AddressDto, MessageDetailDto, SendResultDto } from '@osm/shared'
 import { Bold, Italic, Link2, List, Paperclip, Send, Trash2, Underline, X } from 'lucide-react'
-import { type ChangeEvent, useEffect, useRef, useState } from 'react'
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { type ComposeMode, clearDraft, composeDraftKey, loadDraft, saveDraft } from '@/lib/drafts'
 import { addressLine, displayAddress, formatBytes, formatFullDate, previewText } from '@/lib/format'
 import { useToast } from '@/lib/toast'
 import { Modal } from './Modal'
 import { Spinner } from './Spinner'
-
-export type ComposeMode = 'new' | 'reply' | 'forward'
 
 interface ComposerProps {
   open: boolean
@@ -29,7 +28,9 @@ function escapeHtml(value: string): string {
 }
 
 function subjectWithPrefix(subject: string, mode: ComposeMode): string {
-  if (mode === 'reply') return /^re:/i.test(subject) ? subject : `Re: ${subject}`
+  if (mode === 'reply' || mode === 'replyAll') {
+    return /^re:/i.test(subject) ? subject : `Re: ${subject}`
+  }
   if (mode === 'forward') return /^fwd?:/i.test(subject) ? subject : `Fwd: ${subject}`
   return ''
 }
@@ -62,6 +63,71 @@ function wrapOutgoingHtml(inner: string): string {
   return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.7;color:#24211d;">${inner}</div>`
 }
 
+function formatRecipient(address: AddressDto): string {
+  const name = address.name?.trim()
+  if (!name) return address.address
+  // Quote display names containing separators so the comma-separated input is
+  // parsed back into the same recipients by Nodemailer.
+  const safeName = /[",;]/.test(name) ? `"${name.replace(/"/g, '\\"')}"` : name
+  return `${safeName} <${address.address}>`
+}
+
+/** Reply-all Cc list: original To + Cc, minus our own addresses and the primary recipient. */
+function replyAllCc(source: MessageDetailDto, accounts: AccountDto[], primary: string): string {
+  const own = new Set(accounts.map((account) => account.email.toLowerCase()))
+  const seen = new Set([primary.toLowerCase()])
+  const recipients: string[] = []
+
+  for (const address of [...source.to, ...source.cc]) {
+    const key = address.address.toLowerCase()
+    if (!key || own.has(key) || seen.has(key)) continue
+    seen.add(key)
+    recipients.push(formatRecipient(address))
+  }
+  return recipients.join(', ')
+}
+
+function hasMeaningfulHtml(html: string): boolean {
+  if (/<img\b/i.test(html)) return true
+  return (
+    html
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .trim().length > 0
+  )
+}
+
+function signatureHtml(signature: string | undefined): string {
+  const text = signature?.trim()
+  if (!text) return ''
+  return `<div style="color:#6b6357;font-size:13px;line-height:1.6;">${escapeHtml(text).replace(
+    /\n/g,
+    '<br>',
+  )}</div>`
+}
+
+/**
+ * New messages put the signature below the caret; replies and forwards put it
+ * above the quote so the usual top-posting order is preserved.
+ */
+function composeBody(
+  mode: ComposeMode,
+  source: MessageDetailDto | null,
+  signature: string | undefined,
+): string {
+  const sig = signatureHtml(signature)
+  if (mode === 'new' || !source) return sig ? `<p><br></p>${sig}` : ''
+  const template = mode === 'forward' ? forwardBody(source) : quoteBody(source)
+  return sig ? `${sig}<p><br></p>${template}` : template
+}
+
+function formatSavedAt(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function Composer({
   open,
   mode,
@@ -71,7 +137,7 @@ export function Composer({
   onClose,
   onSent,
 }: ComposerProps) {
-  const { config } = useAuth()
+  const { config, user } = useAuth()
   const toast = useToast()
   const editorRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -85,43 +151,152 @@ export function Composer({
   const [files, setFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const [bodyVersion, setBodyVersion] = useState(0)
   const fallbackAccountId = defaultAccountId ?? accounts[0]?.id ?? ''
+  const sourceKey = source ? (source.messageId ?? `${source.mailbox}:${source.uid}`) : 'new'
+  const draftKey = user ? composeDraftKey(user.id, mode, sourceKey) : null
 
-  // The parent remounts the composer for every compose session (new/reply/forward),
-  // so this effect only needs to initialise the draft once.
+  const latest = useRef({ accountId, to, cc, bcc, subject })
+  latest.current = { accountId, to, cc, bcc, subject }
+  const sentRef = useRef(false)
+  const dirtyRef = useRef(false)
+  const persistRef = useRef<(() => void) | null>(null)
+
+  const persistDraft = useCallback((): void => {
+    if (!draftKey || sentRef.current || !dirtyRef.current) return
+    const html = editorRef.current?.innerHTML ?? ''
+    const empty =
+      !to.trim() && !cc.trim() && !bcc.trim() && !subject.trim() && !hasMeaningfulHtml(html)
+
+    if (empty) {
+      clearDraft(draftKey)
+      setDraftSavedAt(null)
+      return
+    }
+
+    const savedAt = saveDraft(draftKey, {
+      mode,
+      sourceKey,
+      accountId,
+      to,
+      cc,
+      bcc,
+      subject,
+      html,
+    })
+    if (savedAt) setDraftSavedAt(savedAt)
+  }, [accountId, bcc, cc, draftKey, mode, sourceKey, subject, to])
+
+  useEffect(() => {
+    persistRef.current = () => persistDraft()
+  }, [persistDraft])
+
+  // The parent remounts the composer for every compose session, so this effect
+  // initialises either the restored draft or the reply/forward template once.
   // biome-ignore lint/correctness/useExhaustiveDependencies: initialise once per compose session
   useEffect(() => {
-    setAccountId(fallbackAccountId)
     setError('')
     setFiles([])
     setSending(false)
     setShowCc(false)
+    setBodyVersion(0)
+    sentRef.current = false
+    dirtyRef.current = false
 
-    if (mode === 'reply' && source) {
-      const target = source.replyTo[0]?.address ?? source.from[0]?.address ?? ''
-      setTo(target)
-      setCc('')
-      setBcc('')
-      setSubject(subjectWithPrefix(source.subject, mode))
-      if (editorRef.current) editorRef.current.innerHTML = quoteBody(source)
-    } else if (mode === 'forward' && source) {
-      setTo('')
-      setCc('')
-      setBcc('')
-      setSubject(subjectWithPrefix(source.subject, mode))
-      if (editorRef.current) editorRef.current.innerHTML = forwardBody(source)
+    const saved = draftKey ? loadDraft(draftKey) : null
+    if (saved) {
+      const restoredAccountId = accounts.some((account) => account.id === saved.accountId)
+        ? saved.accountId
+        : fallbackAccountId
+      setAccountId(restoredAccountId)
+      setTo(saved.to)
+      setCc(saved.cc)
+      setBcc(saved.bcc)
+      setShowCc(Boolean(saved.cc || saved.bcc))
+      setSubject(saved.subject)
+      setDraftSavedAt(saved.savedAt)
+      if (editorRef.current) editorRef.current.innerHTML = saved.html
+      toast.info('已恢复草稿', '发送成功后会自动清除')
     } else {
-      setTo('')
-      setCc('')
-      setBcc('')
-      setSubject('')
-      if (editorRef.current) editorRef.current.innerHTML = ''
+      setAccountId(fallbackAccountId)
+      setDraftSavedAt(null)
+      const signature = accounts.find((account) => account.id === fallbackAccountId)?.signature
+
+      if ((mode === 'reply' || mode === 'replyAll') && source) {
+        const target = source.replyTo[0]?.address ?? source.from[0]?.address ?? ''
+        setTo(target)
+        setCc(mode === 'replyAll' ? replyAllCc(source, accounts, target) : '')
+        setBcc('')
+        setSubject(subjectWithPrefix(source.subject, mode))
+        if (editorRef.current) editorRef.current.innerHTML = composeBody(mode, source, signature)
+      } else if (mode === 'forward' && source) {
+        setTo('')
+        setCc('')
+        setBcc('')
+        setSubject(subjectWithPrefix(source.subject, mode))
+        if (editorRef.current) editorRef.current.innerHTML = composeBody(mode, source, signature)
+      } else {
+        setTo('')
+        setCc('')
+        setBcc('')
+        setSubject('')
+        if (editorRef.current) editorRef.current.innerHTML = composeBody('new', null, signature)
+      }
     }
+
     window.setTimeout(() => {
-      if (mode === 'new') document.getElementById('compose-to')?.focus()
+      if (mode === 'new' && !saved) document.getElementById('compose-to')?.focus()
       else editorRef.current?.focus()
     }, 60)
   }, [])
+
+  // Debounced autosave. bodyVersion changes when the contenteditable fires input,
+  // because the editor body is uncontrolled and would not re-render on its own.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: bodyVersion is an intentional change signal, not a value read by the effect
+  useEffect(() => {
+    if (!draftKey) return
+    const timer = window.setTimeout(() => persistDraft(), 600)
+    return () => window.clearTimeout(timer)
+  }, [bodyVersion, draftKey, persistDraft])
+
+  // Persist on unmount as well, so navigating away cannot lose the last keystrokes.
+  useEffect(() => {
+    return () => {
+      persistRef.current?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (sentRef.current || !dirtyRef.current) return
+      const html = editorRef.current?.innerHTML ?? ''
+      if (!latest.current.to.trim() && !latest.current.subject.trim() && !html.trim()) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
+
+  function requestClose() {
+    if (sending) return
+    persistDraft()
+    if (files.length > 0) {
+      const confirmed = window.confirm('附件不会随草稿保存，关闭后需要重新添加。确定关闭吗？')
+      if (!confirmed) return
+    }
+    onClose()
+  }
+
+  function discardDraft() {
+    if (!draftKey) return
+    if (!window.confirm('丢弃这封草稿？此操作不可撤销。')) return
+    clearDraft(draftKey)
+    dirtyRef.current = false
+    setDraftSavedAt(null)
+    onClose()
+  }
 
   function runCommand(command: string, value?: string) {
     editorRef.current?.focus()
@@ -144,6 +319,7 @@ export function Composer({
       event.target.value = ''
       return
     }
+    dirtyRef.current = true
     setFiles(next)
     event.target.value = ''
   }
@@ -171,7 +347,7 @@ export function Composer({
     form.append('subject', subject.trim())
     form.append('text', bodyText)
     form.append('html', wrapOutgoingHtml(editorRef.current?.innerHTML ?? ''))
-    if (mode === 'reply' && source?.messageId) {
+    if ((mode === 'reply' || mode === 'replyAll') && source?.messageId) {
       form.append('inReplyTo', source.messageId)
       const references = [...source.references, source.messageId].join(' ')
       form.append('references', references)
@@ -181,6 +357,9 @@ export function Composer({
     setSending(true)
     try {
       await api.postForm<SendResultDto>(`/accounts/${accountId}/send`, form)
+      sentRef.current = true
+      if (draftKey) clearDraft(draftKey)
+      setDraftSavedAt(null)
       toast.success(
         '邮件已发送',
         `发件邮箱：${accounts.find((item) => item.id === accountId)?.email ?? ''}`,
@@ -194,13 +373,22 @@ export function Composer({
     }
   }
 
+  const title =
+    mode === 'replyAll'
+      ? '全部回复'
+      : mode === 'reply'
+        ? '回复邮件'
+        : mode === 'forward'
+          ? '转发邮件'
+          : '写邮件'
+
   return (
     <Modal
       open={open}
-      title={mode === 'reply' ? '回复邮件' : mode === 'forward' ? '转发邮件' : '写邮件'}
+      title={title}
       subtitle={source ? source.subject || '(无主题)' : '支持添加附件与富文本正文'}
       size="lg"
-      onClose={sending ? () => undefined : onClose}
+      onClose={sending ? () => undefined : requestClose}
       footer={
         <div className="composer__foot">
           <div className="composer__foot-left">
@@ -213,13 +401,26 @@ export function Composer({
               添加附件
               {files.length > 0 ? <span className="composer__count">{files.length}</span> : null}
             </button>
-            <span className="composer__hint">Ctrl / ⌘ + Enter 发送</span>
+            <span className="composer__hint">
+              Ctrl / ⌘ + Enter 发送
+              {draftSavedAt ? ` · 草稿已保存 ${formatSavedAt(draftSavedAt)}` : ''}
+            </span>
           </div>
           <div className="composer__foot-right">
+            {draftSavedAt ? (
+              <button
+                type="button"
+                className="button button--ghost button--sm"
+                onClick={discardDraft}
+                disabled={sending}
+              >
+                丢弃草稿
+              </button>
+            ) : null}
             <button
               type="button"
               className="button button--ghost"
-              onClick={onClose}
+              onClick={requestClose}
               disabled={sending}
             >
               取消
@@ -255,7 +456,10 @@ export function Composer({
             id="compose-from"
             className="composer__select"
             value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
+            onChange={(event) => {
+              dirtyRef.current = true
+              setAccountId(event.target.value)
+            }}
             disabled={sending}
           >
             {accounts.map((account) => (
@@ -274,7 +478,10 @@ export function Composer({
             id="compose-to"
             className="composer__input"
             value={to}
-            onChange={(event) => setTo(event.target.value)}
+            onChange={(event) => {
+              dirtyRef.current = true
+              setTo(event.target.value)
+            }}
             placeholder="name@example.com，多个地址用逗号分隔"
             disabled={sending}
           />
@@ -297,7 +504,10 @@ export function Composer({
                 id="compose-cc"
                 className="composer__input"
                 value={cc}
-                onChange={(event) => setCc(event.target.value)}
+                onChange={(event) => {
+                  dirtyRef.current = true
+                  setCc(event.target.value)
+                }}
                 placeholder="可选"
                 disabled={sending}
               />
@@ -310,7 +520,10 @@ export function Composer({
                 id="compose-bcc"
                 className="composer__input"
                 value={bcc}
-                onChange={(event) => setBcc(event.target.value)}
+                onChange={(event) => {
+                  dirtyRef.current = true
+                  setBcc(event.target.value)
+                }}
                 placeholder="可选"
                 disabled={sending}
               />
@@ -326,7 +539,10 @@ export function Composer({
             id="compose-subject"
             className="composer__input"
             value={subject}
-            onChange={(event) => setSubject(event.target.value)}
+            onChange={(event) => {
+              dirtyRef.current = true
+              setSubject(event.target.value)
+            }}
             placeholder="这封邮件是关于…"
             disabled={sending}
           />
@@ -380,6 +596,10 @@ export function Composer({
           aria-multiline="true"
           aria-label="邮件正文"
           data-placeholder="写点什么…"
+          onInput={() => {
+            dirtyRef.current = true
+            setBodyVersion((value) => value + 1)
+          }}
         />
 
         {files.length > 0 ? (

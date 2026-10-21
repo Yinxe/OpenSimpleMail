@@ -1,4 +1,4 @@
-import type { AccountDto, MailboxDto, UserDto } from '@osm/shared'
+import { type AccountDto, type MailboxDto, STARRED_MAILBOX, type UserDto } from '@osm/shared'
 import {
   Archive,
   FileText,
@@ -25,8 +25,10 @@ interface SidebarProps {
   activeMailbox: string
   mailboxes: MailboxDto[]
   accountUnread: Record<string, number>
+  starredCount?: number
   onSelectAccount: (accountId: string | null) => void
   onSelectMailbox: (path: string) => void
+  onSelectStarred: () => void
   onCompose: () => void
   onAddAccount: () => void
   onSettings: () => void
@@ -48,7 +50,7 @@ export function folderLabel(folder: MailboxDto): string {
     case '\\Inbox':
       return '收件箱'
     case '\\Flagged':
-      return '星标邮件'
+      return '收藏'
     case '\\Drafts':
       return '草稿箱'
     case '\\Sent':
@@ -97,17 +99,24 @@ export function Sidebar({
   activeMailbox,
   mailboxes,
   accountUnread,
+  starredCount,
   onSelectAccount,
   onSelectMailbox,
+  onSelectStarred,
   onCompose,
   onAddAccount,
   onSettings,
   onLogout,
 }: SidebarProps) {
-  const sortedMailboxes = [...mailboxes].sort((a, b) => {
-    const rank = folderRank(a) - folderRank(b)
-    return rank === 0 ? a.name.localeCompare(b.name, 'zh-CN') : rank
-  })
+  const sortedMailboxes = [...mailboxes]
+    // The starred view is a first-class entry above the account list, so the
+    // provider's own `\Flagged` folder would only duplicate it.
+    .filter((folder) => folder.specialUse !== '\\Flagged')
+    .sort((a, b) => {
+      const rank = folderRank(a) - folderRank(b)
+      return rank === 0 ? a.name.localeCompare(b.name, 'zh-CN') : rank
+    })
+  const starredActive = activeMailbox === STARRED_MAILBOX
 
   return (
     <aside className="sidebar">
@@ -123,7 +132,7 @@ export function Sidebar({
       <nav className="sidebar__nav">
         <button
           type="button"
-          className={`nav-item nav-item--unified ${activeAccountId === null ? 'is-active' : ''}`}
+          className={`nav-item nav-item--unified ${activeAccountId === null && !starredActive ? 'is-active' : ''}`}
           onClick={() => onSelectAccount(null)}
         >
           <span className="nav-item__icon">
@@ -133,6 +142,18 @@ export function Sidebar({
           <span className="nav-item__count">
             {Object.values(accountUnread).reduce((sum, value) => sum + value, 0) || ''}
           </span>
+        </button>
+        <button
+          type="button"
+          className={`nav-item nav-item--starred ${starredActive ? 'is-active' : ''}`}
+          onClick={onSelectStarred}
+          title="收藏的邮件会集中在这里"
+        >
+          <span className="nav-item__icon">
+            <Star size={17} />
+          </span>
+          <span className="nav-item__label">收藏</span>
+          <span className="nav-item__count">{starredCount || ''}</span>
         </button>
       </nav>
 

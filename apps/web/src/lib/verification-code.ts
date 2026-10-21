@@ -1,0 +1,280 @@
+/**
+ * Heuristic verification-code extraction for webmail messages.
+ *
+ * The extractor works on plain text (the caller supplies the visible text of
+ * the HTML part). It only accepts a code when a verification keyword sits near
+ * it, which keeps invoice numbers, tracking numbers and promo codes out.
+ */
+
+export type VerificationSource = 'subject' | 'body'
+
+export interface VerificationCandidate {
+  code: string
+  score: number
+  keyword: string
+  context: string
+  source: VerificationSource
+}
+
+export interface VerificationResult {
+  code: string | null
+  candidates: VerificationCandidate[]
+  context: string | null
+  expiry: string | null
+  source: VerificationSource | null
+}
+
+interface KeywordMatch {
+  index: number
+  end: number
+  weight: number
+  label: string
+}
+
+interface CandidateSeed {
+  code: string
+  raw: string
+  start: number
+  end: number
+  source: VerificationSource
+  text: string
+}
+
+const KEYWORDS: Array<{ pattern: RegExp; weight: number; label: string }> = [
+  {
+    pattern: /(?:短信|邮箱|登录|安全|动态|手机|验证)?验证码/g,
+    weight: 10,
+    label: '验证码',
+  },
+  {
+    pattern: /校验码|验证代码|确认码|动态码|一次性密码|临时密码|授权码|登录码/g,
+    weight: 9,
+    label: '校验码',
+  },
+  {
+    pattern:
+      /verification\s+code|security\s+code|one[-\s]?time\s+(?:code|password)|confirmation\s+code|login\s+code|authentication\s+code/gi,
+    weight: 10,
+    label: 'verification code',
+  },
+  { pattern: /\bOTP\b/gi, weight: 9, label: 'OTP' },
+  { pattern: /\bpasscode\b/gi, weight: 9, label: 'passcode' },
+  { pattern: /\bcode\s*(?:is|:|=|：)/gi, weight: 7, label: 'code' },
+  { pattern: /\bcode\b/gi, weight: 3, label: 'code' },
+]
+
+const NEGATIVE_CONTEXT =
+  /订单|发票|金额|价格|运费|邮编|电话|手机号|身份证|快递|物流|优惠|折扣|促销|优惠券|兑换券|积分|order|invoice|amount|price|zip|phone|tel|tracking|shipment|coupon|promo|discount|voucher|gift/i
+
+const TECH_CONTEXT = /版本|version|release|build|issue|pull request|commit|pr\s*#/i
+
+const EXPIRY_PATTERNS: Array<{
+  pattern: RegExp
+  absolute?: boolean
+}> = [
+  {
+    pattern:
+      /(?:有效期(?:为)?|有效|expires?\s+in|valid\s+for)\s*(\d{1,3})\s*(分钟|分|小时|minutes?|mins?|hours?)/i,
+  },
+  {
+    pattern: /(\d{1,3})\s*(分钟|分|小时|minutes?|mins?|hours?)\s*(?:内)?\s*(?:有效|失效|过期)/i,
+  },
+  {
+    pattern: /(?:有效期至|expires?\s+at|valid\s+until)\s*([0-2]?\d[:：][0-5]\d)/i,
+    absolute: true,
+  },
+]
+
+function normalizeInput(value: string): string {
+  return value
+    .replace(/[\uFF10-\uFF19]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+    .replace(/[\uFF21-\uFF3A\uFF41-\uFF5A]/g, (char) =>
+      String.fromCharCode(char.charCodeAt(0) - 0xfee0),
+    )
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\u00a0/g, ' ')
+}
+
+function findKeywordMatches(text: string): KeywordMatch[] {
+  const matches: KeywordMatch[] = []
+  for (const keyword of KEYWORDS) {
+    const pattern = new RegExp(
+      keyword.pattern.source,
+      keyword.pattern.flags.includes('g') ? keyword.pattern.flags : `${keyword.pattern.flags}g`,
+    )
+    for (const match of text.matchAll(pattern)) {
+      const index = match.index ?? 0
+      matches.push({
+        index,
+        end: index + match[0].length,
+        weight: keyword.weight,
+        label: keyword.label,
+      })
+    }
+  }
+  return matches.sort((left, right) => left.index - right.index || right.weight - left.weight)
+}
+
+function nearestKeyword(
+  matches: KeywordMatch[],
+  start: number,
+  end: number,
+): { match: KeywordMatch; distance: number } | null {
+  let best: { match: KeywordMatch; distance: number } | null = null
+  for (const match of matches) {
+    const distance =
+      match.end <= start ? start - match.end : match.index >= end ? match.index - end : 0
+    if (distance > 80) continue
+    if (
+      !best ||
+      distance < best.distance ||
+      (distance === best.distance && match.weight > best.match.weight)
+    ) {
+      best = { match, distance }
+    }
+  }
+  return best
+}
+
+function contextAround(text: string, start: number, end: number, radius = 60): string {
+  const from = Math.max(0, start - radius)
+  const to = Math.min(text.length, end + radius)
+  const snippet = text.slice(from, to).replace(/\s+/g, ' ').trim()
+  return `${from > 0 ? '…' : ''}${snippet}${to < text.length ? '…' : ''}`.slice(0, 180)
+}
+
+function collectSeeds(text: string, source: VerificationSource): CandidateSeed[] {
+  const seeds: CandidateSeed[] = []
+  const seen = new Set<string>()
+
+  const add = (raw: string, start: number, end: number) => {
+    const code = raw.replace(/[ -]/g, '').toUpperCase()
+    if (code.length < 4 || code.length > 8) return
+    if (!/^[A-Z0-9]+$/.test(code)) return
+    if (!/\d/.test(code)) return
+    if (/^[A-Z]+$/.test(code)) return
+    if (seen.has(`${start}:${end}`)) return
+    seen.add(`${start}:${end}`)
+    seeds.push({ code, raw, start, end, source, text })
+  }
+
+  for (const match of text.matchAll(/(?<![A-Za-z0-9])(\d{4,8})(?![A-Za-z0-9])/g)) {
+    add(match[1], match.index ?? 0, (match.index ?? 0) + match[0].length)
+  }
+
+  for (const match of text.matchAll(
+    /(?<![A-Za-z0-9])(\d{2,4}(?:[ -]\d{2,4}){1,2})(?![A-Za-z0-9])/g,
+  )) {
+    add(match[1], match.index ?? 0, (match.index ?? 0) + match[0].length)
+  }
+
+  for (const match of text.matchAll(/(?<![A-Za-z0-9])(\d(?:[ -]\d){3,7})(?![A-Za-z0-9])/g)) {
+    add(match[1], match.index ?? 0, (match.index ?? 0) + match[0].length)
+  }
+
+  for (const match of text.matchAll(/(?<![A-Za-z0-9])([A-Z0-9]{4,8})(?![A-Za-z0-9])/gi)) {
+    const raw = match[1]
+    if (!/[A-Z]/i.test(raw) || !/\d/.test(raw)) continue
+    add(raw, match.index ?? 0, (match.index ?? 0) + match[0].length)
+  }
+
+  return seeds
+}
+
+function scoreSeed(
+  seed: CandidateSeed,
+  keywords: KeywordMatch[],
+  hasExpiry: boolean,
+): number | null {
+  const nearest = nearestKeyword(keywords, seed.start, seed.end)
+  if (!nearest) return null
+
+  const around = seed.text.slice(
+    Math.max(0, seed.start - 36),
+    Math.min(seed.text.length, seed.end + 36),
+  )
+
+  let score = nearest.match.weight
+  score += Math.max(0, 8 - nearest.distance / 12)
+  if (seed.source === 'subject') score += 3
+  if (seed.code.length === 6) score += 1
+  else if (seed.code.length === 8) score += 0.5
+  if (seed.raw !== seed.code) score += 1
+  if (hasExpiry) score += 1
+  if (/^(\d)\1+$/.test(seed.code)) score -= 3
+  if (NEGATIVE_CONTEXT.test(around)) score -= 7
+  if (TECH_CONTEXT.test(around)) score -= 3
+  if (
+    /^\d{4}$/.test(seed.code) &&
+    /^(?:19|20)\d{2}$/.test(seed.code) &&
+    /(年|月|日|date|20\d\d)/i.test(around)
+  ) {
+    score -= 5
+  }
+
+  return score
+}
+
+function findExpiry(text: string): string | null {
+  for (const entry of EXPIRY_PATTERNS) {
+    const match = entry.pattern.exec(text)
+    if (!match) continue
+    if (entry.absolute) {
+      return `${match[1].replace('：', ':')} 前有效`
+    }
+    const amount = Number(match[1])
+    if (!Number.isFinite(amount) || amount <= 0) continue
+    const unit = match[2] ?? ''
+    if (/^(分钟|分|minute|min)/i.test(unit)) return `${amount} 分钟内有效`
+    return `${amount} 小时内有效`
+  }
+  return null
+}
+
+export function findVerificationCode(input: {
+  subject?: string | null
+  text?: string | null
+  htmlText?: string | null
+}): VerificationResult {
+  const subject = normalizeInput(input.subject ?? '')
+  const body = normalizeInput([input.text ?? '', input.htmlText ?? ''].filter(Boolean).join('\n\n'))
+  const allText = [subject, body].filter(Boolean).join('\n\n')
+  const expiry = findExpiry(allText)
+
+  const seeds = [
+    ...(subject ? collectSeeds(subject, 'subject') : []),
+    ...(body ? collectSeeds(body, 'body') : []),
+  ]
+
+  const candidates: VerificationCandidate[] = []
+  for (const seed of seeds) {
+    const keywords = findKeywordMatches(seed.text)
+    const score = scoreSeed(seed, keywords, Boolean(expiry))
+    if (score === null || score < 8) continue
+    candidates.push({
+      code: seed.code,
+      score,
+      keyword: nearestKeyword(keywords, seed.start, seed.end)?.match.label ?? 'code',
+      context: contextAround(seed.text, seed.start, seed.end),
+      source: seed.source,
+    })
+  }
+
+  candidates.sort((left, right) => right.score - left.score || left.code.localeCompare(right.code))
+
+  const byCode = new Map<string, VerificationCandidate>()
+  for (const candidate of candidates) {
+    const existing = byCode.get(candidate.code)
+    if (!existing || candidate.score > existing.score) byCode.set(candidate.code, candidate)
+  }
+  const unique = [...byCode.values()].sort((left, right) => right.score - left.score)
+  const primary = unique[0] ?? null
+
+  return {
+    code: primary?.code ?? null,
+    candidates: unique.slice(0, 4),
+    context: primary?.context ?? null,
+    expiry: primary ? expiry : null,
+    source: primary?.source ?? null,
+  }
+}

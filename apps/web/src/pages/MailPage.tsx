@@ -1,9 +1,10 @@
-import type {
-  AccountDto,
-  MailboxDto,
-  MessageDetailDto,
-  MessagePageDto,
-  MessageSummaryDto,
+import {
+  type AccountDto,
+  type MailboxDto,
+  type MessageDetailDto,
+  type MessagePageDto,
+  type MessageSummaryDto,
+  STARRED_MAILBOX,
 } from '@osm/shared'
 import {
   keepPreviousData,
@@ -16,13 +17,17 @@ import { Plus, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AccountDialog } from '@/components/AccountDialog'
-import { type ComposeMode, Composer } from '@/components/Composer'
+import { Composer } from '@/components/Composer'
+import { DeleteMessageDialog } from '@/components/DeleteMessageDialog'
 import { Logo } from '@/components/Logo'
 import { MailList, type MailListItem } from '@/components/MailList'
 import { MessageReader } from '@/components/MessageReader'
 import { folderLabel, Sidebar } from '@/components/Sidebar'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { isDeleteConfirmSkipped, setDeleteConfirmSkipped } from '@/lib/deleteGuard'
+import type { ComposeMode } from '@/lib/drafts'
+import { displayAddress } from '@/lib/format'
 import { useToast } from '@/lib/toast'
 
 const DEFAULT_MAILBOX = 'INBOX'
@@ -35,6 +40,14 @@ interface FlagVars {
   flagged?: boolean
   wasUnread: boolean
   wasStarred: boolean
+}
+
+interface DeleteTarget {
+  accountId: string
+  mailbox: string
+  uid: number
+  subject: string
+  sender: string
 }
 
 interface ComposeState {
@@ -57,6 +70,29 @@ function pickMailbox(mailboxes: MailboxDto[]): string {
   return inbox?.path ?? mailboxes[0]?.path ?? DEFAULT_MAILBOX
 }
 
+/**
+ * Resolve where a delete will put the message. Returns null when the server has
+ * no trash folder (or the message already sits in it), which means a permanent
+ * delete and changes the confirmation copy.
+ */
+function trashDestination(
+  accounts: AccountDto[],
+  mailboxQueries: { data?: MailboxDto[] }[],
+  target: DeleteTarget | null,
+): string | null {
+  if (!target) return null
+  const index = accounts.findIndex((account) => account.id === target.accountId)
+  if (index < 0) return null
+  const mailboxes = mailboxQueries[index]?.data ?? []
+  const trash = mailboxes.find(
+    (mailbox) =>
+      mailbox.specialUse === '\\Trash' ||
+      /^(trash|deleted items|已删除|废纸篓)$/i.test(mailbox.name),
+  )
+  if (!trash || trash.path === target.mailbox) return null
+  return folderLabel(trash)
+}
+
 export function MailPage() {
   const { user, config, preferences, logout } = useAuth()
   const navigate = useNavigate()
@@ -69,18 +105,28 @@ export function MailPage() {
   const mailboxParam = params.get('mailbox') ?? DEFAULT_MAILBOX
   const uidParam = Number(params.get('uid')) || null
   const openAccountParam = params.get('openAccount')
+  const openMailboxParam = params.get('openMailbox')
   const page = Math.max(1, Number(params.get('page')) || 1)
   const query = params.get('q') ?? ''
   const unified = accountParam === 'all'
+  const starred = mailboxParam === STARRED_MAILBOX
 
   const [searchInput, setSearchInput] = useState(query)
   const [compose, setCompose] = useState<ComposeState | null>(null)
   const previousPageSize = useRef(preferences.pageSize)
   const [addOpen, setAddOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<DeleteTarget | null>(null)
+  const [keepDeleteConfirm, setKeepDeleteConfirm] = useState(true)
+  const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
+
+  useEffect(() => {
+    setSkipDeleteConfirm(isDeleteConfirmSkipped(user?.id))
+  }, [user?.id])
 
   const update = useCallback(
     (patch: Record<string, string | null>) => {
+      setPendingDelete(null)
       setParams(
         (current) => {
           const next = new URLSearchParams(current)
@@ -134,7 +180,8 @@ export function MailPage() {
     if (!params.get('account') && accounts[0]) {
       update({
         account: preferences.defaultView === 'unified' ? 'all' : accounts[0].id,
-        mailbox: DEFAULT_MAILBOX,
+        // Keep an explicit mailbox from a shared link (including the starred view).
+        mailbox: params.get('mailbox') ?? DEFAULT_MAILBOX,
         uid: null,
         openAccount: null,
         page: null,
@@ -153,11 +200,12 @@ export function MailPage() {
   }, [accounts, accountsQuery.isLoading, accountParam, params, preferences.defaultView, update])
 
   useEffect(() => {
+    if (starred) return
     if (!activeAccount || activeMailboxes.length === 0) return
     if (!activeMailboxes.some((mailbox) => mailbox.path === mailboxParam)) {
       update({ mailbox: pickMailbox(activeMailboxes), uid: null })
     }
-  }, [activeAccount, activeMailboxes, mailboxParam, update])
+  }, [activeAccount, activeMailboxes, mailboxParam, starred, update])
 
   const messagesQuery = useQuery({
     queryKey: ['messages', accountParam, mailboxParam, page, preferences.pageSize, query],
@@ -173,12 +221,15 @@ export function MailPage() {
     refetchInterval: refreshMs,
   })
 
+  const unifiedMailbox = starred ? STARRED_MAILBOX : DEFAULT_MAILBOX
   const unifiedQueries = useQueries({
     queries: accounts.map((account) => ({
-      queryKey: ['messages', account.id, DEFAULT_MAILBOX, 1, preferences.pageSize, query],
+      queryKey: ['messages', account.id, unifiedMailbox, 1, preferences.pageSize, query],
       queryFn: () =>
         api.get<MessagePageDto>(
-          `/accounts/${account.id}/messages?mailbox=${DEFAULT_MAILBOX}&page=1&pageSize=${preferences.pageSize}${
+          `/accounts/${account.id}/messages?mailbox=${encodeURIComponent(
+            unifiedMailbox,
+          )}&page=1&pageSize=${preferences.pageSize}${
             query ? `&q=${encodeURIComponent(query)}` : ''
           }`,
         ),
@@ -217,8 +268,28 @@ export function MailPage() {
     ? unifiedQueries.reduce((sum, result) => sum + (result.data?.total ?? 0), 0)
     : (messagesQuery.data?.total ?? 0)
 
+  const listError = unified
+    ? (unifiedQueries.find((result) => result.isError)?.error ?? null)
+    : (messagesQuery.error ?? null)
+
+  function retryList() {
+    if (unified) {
+      for (const result of unifiedQueries) {
+        if (result.isError) void result.refetch()
+      }
+      return
+    }
+    void messagesQuery.refetch()
+  }
+
   const detailAccountId = unified ? openAccountParam : accountParam
-  const detailMailbox = unified ? DEFAULT_MAILBOX : mailboxParam
+  const selectedItem = uidParam
+    ? items.find(
+        (item) => item.uid === uidParam && (!unified || item.accountId === detailAccountId),
+      )
+    : undefined
+  const detailMailbox =
+    openMailboxParam ?? selectedItem?.mailbox ?? (unified ? unifiedMailbox : mailboxParam)
   const detailQuery = useQuery({
     queryKey: ['message', detailAccountId, detailMailbox, uidParam],
     queryFn: () =>
@@ -227,7 +298,7 @@ export function MailPage() {
           detailMailbox,
         )}`,
       ),
-    enabled: Boolean(uidParam && detailAccountId),
+    enabled: Boolean(uidParam && detailAccountId && detailMailbox !== STARRED_MAILBOX),
     staleTime: 30_000,
   })
 
@@ -254,18 +325,40 @@ export function MailPage() {
       queryClient.setQueriesData<MessagePageDto>(
         { queryKey: ['messages', vars.accountId] },
         (old) => {
-          if (!old || old.mailbox !== vars.mailbox) return old
+          if (!old) return old
+          const apply = (message: MessageSummaryDto): MessageSummaryDto => ({
+            ...message,
+            unread: vars.seen === undefined ? message.unread : !vars.seen,
+            starred: vars.flagged === undefined ? message.starred : vars.flagged,
+            flags: withFlags(message.flags, vars),
+          })
+
+          if (old.mailbox === STARRED_MAILBOX) {
+            const target = old.messages.find(
+              (message) => message.uid === vars.uid && message.mailbox === vars.mailbox,
+            )
+            if (!target) return old
+            // Un-starring from the starred view removes the row immediately.
+            if (vars.flagged === false) {
+              return {
+                ...old,
+                messages: old.messages.filter((message) => message !== target),
+                total: Math.max(0, old.total - 1),
+              }
+            }
+            return {
+              ...old,
+              messages: old.messages.map((message) =>
+                message === target ? apply(message) : message,
+              ),
+            }
+          }
+
+          if (old.mailbox !== vars.mailbox) return old
           return {
             ...old,
             messages: old.messages.map((message) =>
-              message.uid === vars.uid
-                ? {
-                    ...message,
-                    unread: vars.seen === undefined ? message.unread : !vars.seen,
-                    starred: vars.flagged === undefined ? message.starred : vars.flagged,
-                    flags: withFlags(message.flags, vars),
-                  }
-                : message,
+              message.uid === vars.uid ? apply(message) : message,
             ),
           }
         },
@@ -294,6 +387,16 @@ export function MailPage() {
         )
       }
     },
+    onSuccess: (_data, vars) => {
+      if (vars.flagged === undefined) return
+      // A new star must show up in the starred view; an unstar was already
+      // removed optimistically, so this only refreshes the total.
+      queryClient.invalidateQueries({
+        queryKey: ['messages', vars.accountId],
+        predicate: (result) => result.queryKey[2] === STARRED_MAILBOX,
+      })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes', vars.accountId] })
+    },
     onError: (error) => {
       toast.error('操作失败', errorMessage(error))
       queryClient.invalidateQueries({ queryKey: ['messages'] })
@@ -303,18 +406,51 @@ export function MailPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (vars: { accountId: string; mailbox: string; uid: number }) =>
-      api.delete(
+      api.delete<{ movedTo?: string }>(
         `/accounts/${vars.accountId}/messages/${vars.uid}?mailbox=${encodeURIComponent(
           vars.mailbox,
         )}`,
       ),
-    onSuccess: (_result, vars) => {
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['messages', vars.accountId] })
+      const previous = queryClient.getQueriesData<MessagePageDto>({
+        queryKey: ['messages', vars.accountId],
+      })
+      queryClient.setQueriesData<MessagePageDto>(
+        { queryKey: ['messages', vars.accountId] },
+        (old) => {
+          if (!old) return old
+          if (old.mailbox !== vars.mailbox && old.mailbox !== STARRED_MAILBOX) return old
+          const messages = old.messages.filter(
+            (message) =>
+              !(
+                message.uid === vars.uid &&
+                (old.mailbox !== STARRED_MAILBOX || message.mailbox === vars.mailbox)
+              ),
+          )
+          if (messages.length === old.messages.length) return old
+          return { ...old, messages, total: Math.max(0, old.total - 1) }
+        },
+      )
+      return { previous }
+    },
+    onSuccess: (result, vars) => {
       queryClient.invalidateQueries({ queryKey: ['messages', vars.accountId] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes', vars.accountId] })
-      if (uidParam === vars.uid) update({ uid: null, openAccount: null })
-      toast.success('邮件已删除', '已移动到废纸篓（如果服务器提供）')
+      if (uidParam === vars.uid && detailAccountId === vars.accountId) {
+        update({ uid: null, openAccount: null, openMailbox: null })
+      }
+      toast.success(
+        '邮件已删除',
+        result?.movedTo ? `已移动到「${result.movedTo}」` : '服务器没有废纸篓，已永久删除',
+      )
     },
-    onError: (error) => toast.error('删除失败', errorMessage(error)),
+    onError: (error, _vars, context) => {
+      for (const [key, data] of context?.previous ?? []) {
+        queryClient.setQueryData(key, data)
+      }
+      toast.error('删除失败', errorMessage(error))
+    },
   })
 
   const moveMutation = useMutation({
@@ -336,9 +472,12 @@ export function MailPage() {
     setSidebarOpen(false)
     update({
       account: accountId ?? 'all',
-      mailbox: DEFAULT_MAILBOX,
+      // The unified entry always opens the unified inbox; switching between
+      // accounts keeps the starred view the user is currently in.
+      mailbox: accountId !== null && starred ? STARRED_MAILBOX : DEFAULT_MAILBOX,
       uid: null,
       openAccount: null,
+      openMailbox: null,
       page: null,
       q: null,
     })
@@ -346,16 +485,33 @@ export function MailPage() {
 
   function selectMailbox(path: string) {
     setSidebarOpen(false)
-    update({ mailbox: path, uid: null, openAccount: null, page: null })
+    update({ mailbox: path, uid: null, openAccount: null, openMailbox: null, page: null })
+  }
+
+  function selectStarred() {
+    setSidebarOpen(false)
+    update({
+      mailbox: STARRED_MAILBOX,
+      uid: null,
+      openAccount: null,
+      openMailbox: null,
+      page: null,
+      q: null,
+    })
+  }
+
+  function mailboxOf(item: MailListItem): string {
+    return item.mailbox ?? (item.accountId || starred ? DEFAULT_MAILBOX : mailboxParam)
   }
 
   function selectMessage(item: MailListItem) {
     const accountId = item.accountId ?? activeAccount?.id
     if (!accountId) return
-    const mailbox = item.accountId ? DEFAULT_MAILBOX : mailboxParam
+    const mailbox = mailboxOf(item)
     update({
       uid: String(item.uid),
       ...(item.accountId ? { openAccount: item.accountId } : {}),
+      openMailbox: mailbox,
     })
     if (item.unread && preferences.autoMarkRead) {
       flagsMutation.mutate({
@@ -378,6 +534,9 @@ export function MailPage() {
       wasUnread: item.unread,
       wasStarred: item.starred,
     })
+    if (item.starred && starred) {
+      toast.info('已取消收藏', '这封邮件已从收藏中移除')
+    }
   }
 
   function toggleRead(item: MessageSummaryDto, accountId: string, mailbox: string) {
@@ -391,8 +550,41 @@ export function MailPage() {
     })
   }
 
+  function requestDelete(target: DeleteTarget) {
+    if (skipDeleteConfirm) {
+      deleteMutation.mutate({
+        accountId: target.accountId,
+        mailbox: target.mailbox,
+        uid: target.uid,
+      })
+      return
+    }
+    setKeepDeleteConfirm(true)
+    setPendingDelete(target)
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return
+    if (user && !keepDeleteConfirm) {
+      setDeleteConfirmSkipped(user.id, true)
+      setSkipDeleteConfirm(true)
+    }
+    deleteMutation.mutate({
+      accountId: pendingDelete.accountId,
+      mailbox: pendingDelete.mailbox,
+      uid: pendingDelete.uid,
+    })
+    setPendingDelete(null)
+  }
+
   function removeItem(item: MessageSummaryDto, accountId: string, mailbox: string) {
-    deleteMutation.mutate({ accountId, mailbox, uid: item.uid })
+    requestDelete({
+      accountId,
+      mailbox,
+      uid: item.uid,
+      subject: item.subject,
+      sender: item.from[0] ? displayAddress(item.from[0]) : '',
+    })
   }
 
   function archiveMessage(message: MessageDetailDto, accountId: string, destination: string) {
@@ -438,19 +630,39 @@ export function MailPage() {
   }, [searchInput, query, update])
 
   const currentMailbox = activeMailboxes.find((mailbox) => mailbox.path === mailboxParam)
-  const listTitle = unified
-    ? '全部收件箱'
-    : currentMailbox
-      ? folderLabel(currentMailbox)
-      : mailboxParam
-  const listSubtitle = unified
-    ? accounts.length > 1
-      ? `${accounts.length} 个账户`
-      : undefined
-    : activeAccount?.email
+  const listTitle = starred
+    ? unified
+      ? '全部收藏'
+      : '收藏'
+    : unified
+      ? '全部收件箱'
+      : currentMailbox
+        ? folderLabel(currentMailbox)
+        : mailboxParam
+  const listSubtitle = starred
+    ? unified
+      ? accounts.length > 1
+        ? `${accounts.length} 个账户 · 稍后处理`
+        : '稍后处理'
+      : activeAccount?.email
+    : unified
+      ? accounts.length > 1
+        ? `${accounts.length} 个账户`
+        : undefined
+      : activeAccount?.email
+
+  const starredCount = useMemo(() => {
+    if (accounts.length === 0) return undefined
+    const totals = accounts.map(
+      (_account, index) =>
+        (mailboxQueries[index]?.data ?? []).find((item) => item.specialUse === '\\Flagged')?.total,
+    )
+    if (totals.some((total) => total === undefined)) return undefined
+    return totals.reduce<number>((sum, total) => sum + (total ?? 0), 0)
+  }, [accounts, mailboxQueries])
 
   const selectedKey = uidParam
-    ? `${unified ? (openAccountParam ?? 'all') : accountParam}:${uidParam}`
+    ? `${unified ? (openAccountParam ?? 'all') : accountParam}:${detailMailbox}:${uidParam}`
     : null
 
   useEffect(() => {
@@ -464,7 +676,7 @@ export function MailPage() {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
-      if (compose || addOpen) return
+      if (compose || addOpen || pendingDelete) return
 
       if (event.key === 'c') {
         event.preventDefault()
@@ -481,7 +693,9 @@ export function MailPage() {
         if (items.length === 0) return
         event.preventDefault()
         const currentIndex = items.findIndex(
-          (item) => `${item.accountId ?? activeAccount?.id}:${item.uid}` === selectedKey,
+          (item) =>
+            `${item.accountId ?? activeAccount?.id}:${item.mailbox ?? detailMailbox}:${item.uid}` ===
+            selectedKey,
         )
         const nextIndex =
           currentIndex === -1
@@ -496,8 +710,13 @@ export function MailPage() {
         openCompose('reply', detailQuery.data)
         return
       }
+      if (event.key === 'a' && detailQuery.data) {
+        event.preventDefault()
+        openCompose('replyAll', detailQuery.data)
+        return
+      }
       if (event.key === 'Escape' && uidParam) {
-        update({ uid: null, openAccount: null })
+        update({ uid: null, openAccount: null, openMailbox: null })
       }
     }
 
@@ -523,8 +742,10 @@ export function MailPage() {
         activeMailbox={mailboxParam}
         mailboxes={activeMailboxes}
         accountUnread={accountUnread}
+        starredCount={starredCount}
         onSelectAccount={selectAccount}
         onSelectMailbox={selectMailbox}
+        onSelectStarred={selectStarred}
         onCompose={() => {
           if (accounts.length === 0) setAddOpen(true)
           else openCompose('new')
@@ -593,26 +814,36 @@ export function MailPage() {
             onStar={(item) => {
               const accountId = item.accountId ?? activeAccount?.id
               if (!accountId) return
-              starMessage(item, accountId, item.accountId ? DEFAULT_MAILBOX : mailboxParam)
+              starMessage(item, accountId, mailboxOf(item))
             }}
             onDelete={(item) => {
               const accountId = item.accountId ?? activeAccount?.id
               if (!accountId) return
-              removeItem(item, accountId, item.accountId ? DEFAULT_MAILBOX : mailboxParam)
+              removeItem(item, accountId, mailboxOf(item))
             }}
             onPage={(nextPage) => update({ page: String(nextPage), uid: null })}
             onRefresh={refresh}
+            error={listError ? errorMessage(listError) : null}
+            onRetry={retryList}
             refreshHint={
               preferences.refreshSeconds > 0
                 ? `每 ${preferences.refreshSeconds} 秒自动刷新`
                 : '自动刷新已关闭'
             }
             onMenu={() => setSidebarOpen(true)}
-            emptyTitle={unified && accounts.length > 0 ? '收件箱是空的' : undefined}
+            emptyTitle={
+              starred
+                ? '还没有收藏的邮件'
+                : unified && accounts.length > 0
+                  ? '收件箱是空的'
+                  : undefined
+            }
             emptyBody={
               query
                 ? '换一个关键词试试，或者切换到其他文件夹。'
-                : '新邮件会出现在这里。点击左上角「写邮件」开始。'
+                : starred
+                  ? '在列表或阅读器里点击星标即可收藏，收藏的邮件会集中出现在这里，方便稍后处理。'
+                  : '新邮件会出现在这里。点击左上角「写邮件」开始。'
             }
           />
 
@@ -622,8 +853,9 @@ export function MailPage() {
             defaultAllowImages={preferences.loadRemoteImages}
             loading={Boolean(uidParam) && detailQuery.isLoading}
             archivePath={archivePath}
-            onClose={() => update({ uid: null, openAccount: null })}
+            onClose={() => update({ uid: null, openAccount: null, openMailbox: null })}
             onReply={(message) => openCompose('reply', message)}
+            onReplyAll={(message) => openCompose('replyAll', message)}
             onForward={(message) => openCompose('forward', message)}
             onStar={(message) => {
               if (!detailAccountId) return
@@ -680,6 +912,18 @@ export function MailPage() {
             q: null,
           })
         }}
+      />
+
+      <DeleteMessageDialog
+        open={Boolean(pendingDelete)}
+        subject={pendingDelete?.subject ?? ''}
+        sender={pendingDelete?.sender ?? ''}
+        destinationLabel={trashDestination(accounts, mailboxQueries, pendingDelete)}
+        keepConfirm={keepDeleteConfirm}
+        busy={deleteMutation.isPending}
+        onKeepConfirmChange={setKeepDeleteConfirm}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
       />
     </div>
   )

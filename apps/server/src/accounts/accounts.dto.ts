@@ -58,6 +58,11 @@ export class CreateAccountDto {
   color?: string
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  signature?: string
+
+  @IsOptional()
   @IsBoolean()
   skipTest?: boolean
 }
@@ -91,4 +96,9 @@ export class UpdateAccountDto {
   @IsOptional()
   @Matches(/^#[0-9a-fA-F]{6}$/)
   color?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  signature?: string
 }

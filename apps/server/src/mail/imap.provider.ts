@@ -1,12 +1,13 @@
 import { Logger, NotFoundException, PayloadTooLargeException } from '@nestjs/common'
-import type {
-  AddressDto,
-  MailboxDto,
-  MessageDetailDto,
-  MessagePageDto,
-  MessageSummaryDto,
-  SendResultDto,
-  TestResultDto,
+import {
+  type AddressDto,
+  type MailboxDto,
+  type MessageDetailDto,
+  type MessagePageDto,
+  type MessageSummaryDto,
+  type SendResultDto,
+  STARRED_MAILBOX,
+  type TestResultDto,
 } from '@osm/shared'
 import type { FetchMessageObject, ImapFlow, MessageStructureObject } from 'imapflow'
 import { type AddressObject, type ParsedMail, simpleParser } from 'mailparser'
@@ -25,6 +26,117 @@ import type { SmtpService } from './smtp.service'
 
 const MAX_MESSAGE_BYTES = 40 * 1024 * 1024
 const INLINE_IMAGE_LIMIT = 1024 * 1024
+
+// Parsing a message is the expensive part of opening it or downloading one of
+// its attachments. Keep a small LRU so clicking three attachments on the same
+// message does not download and parse the whole source three times.
+const PARSED_CACHE_TTL_MS = 10 * 60 * 1000
+const PARSED_CACHE_MAX_BYTES = 24 * 1024 * 1024
+const PARSED_CACHE_MAX_ENTRIES = 12
+const PARSED_CACHE_MAX_MESSAGE_BYTES = 8 * 1024 * 1024
+
+interface ParsedCacheEntry {
+  parsed: ParsedMail
+  bytes: number
+  storedAt: number
+}
+
+const parsedCache = new Map<string, ParsedCacheEntry>()
+let parsedCacheBytes = 0
+
+function parsedCacheKey(accountId: string, mailbox: string, uid: number): string {
+  return `${accountId}\u0000${mailbox}\u0000${uid}`
+}
+
+function dropParsedCache(key: string): void {
+  const entry = parsedCache.get(key)
+  if (!entry) return
+  parsedCache.delete(key)
+  parsedCacheBytes = Math.max(0, parsedCacheBytes - entry.bytes)
+}
+
+function readParsedCache(key: string): ParsedMail | null {
+  const entry = parsedCache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.storedAt > PARSED_CACHE_TTL_MS) {
+    dropParsedCache(key)
+    return null
+  }
+  // Re-insert to refresh the LRU order.
+  parsedCache.delete(key)
+  parsedCache.set(key, entry)
+  return entry.parsed
+}
+
+function writeParsedCache(key: string, parsed: ParsedMail, sourceBytes: number): void {
+  if (sourceBytes > PARSED_CACHE_MAX_MESSAGE_BYTES) return
+  // Parsed attachments keep their own buffers, so count roughly twice the source.
+  const bytes = sourceBytes * 2
+  if (bytes > PARSED_CACHE_MAX_BYTES) return
+
+  dropParsedCache(key)
+  while (
+    parsedCache.size >= PARSED_CACHE_MAX_ENTRIES ||
+    parsedCacheBytes + bytes > PARSED_CACHE_MAX_BYTES
+  ) {
+    const oldest = parsedCache.keys().next().value as string | undefined
+    if (!oldest) break
+    dropParsedCache(oldest)
+  }
+  parsedCache.set(key, { parsed, bytes, storedAt: Date.now() })
+  parsedCacheBytes += bytes
+}
+
+async function parseMessage(key: string, source: Buffer): Promise<ParsedMail> {
+  const cached = readParsedCache(key)
+  if (cached) return cached
+  const parsed = await simpleParser(source)
+  writeParsedCache(key, parsed, source.byteLength)
+  return parsed
+}
+
+// The starred view merges SEARCH results from several folders. Cache the
+// merged summaries briefly so pagination and auto-refresh do not re-run a
+// search against every folder on each keystroke.
+const STARRED_CACHE_TTL_MS = 60 * 1000
+const STARRED_CACHE_MAX_ENTRIES = 24
+const STARRED_MAX_PER_FOLDER = 200
+const STARRED_MAX_TOTAL = 500
+
+interface StarredCacheEntry {
+  messages: MessageSummaryDto[]
+  storedAt: number
+}
+
+const starredCache = new Map<string, StarredCacheEntry>()
+
+function dropStarredCache(accountId: string): void {
+  for (const key of starredCache.keys()) {
+    if (key.startsWith(`${accountId}\u0000`)) starredCache.delete(key)
+  }
+}
+
+function readStarredCache(accountId: string, query: string): MessageSummaryDto[] | null {
+  const key = `${accountId}\u0000${query}`
+  const entry = starredCache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.storedAt > STARRED_CACHE_TTL_MS) {
+    starredCache.delete(key)
+    return null
+  }
+  return entry.messages
+}
+
+function writeStarredCache(accountId: string, query: string, messages: MessageSummaryDto[]): void {
+  const key = `${accountId}\u0000${query}`
+  starredCache.delete(key)
+  while (starredCache.size >= STARRED_CACHE_MAX_ENTRIES) {
+    const oldest = starredCache.keys().next().value as string | undefined
+    if (!oldest) break
+    starredCache.delete(oldest)
+  }
+  starredCache.set(key, { messages, storedAt: Date.now() })
+}
 
 function toIso(value: Date | string | undefined): string {
   if (!value) return new Date().toISOString()
@@ -46,7 +158,7 @@ function hasAttachments(node: MessageStructureObject | undefined): boolean {
   return (node.childNodes ?? []).some(hasAttachments)
 }
 
-function toSummary(message: FetchMessageObject): MessageSummaryDto {
+function toSummary(message: FetchMessageObject, mailbox?: string): MessageSummaryDto {
   const flags = [...(message.flags ?? [])]
   return {
     uid: message.uid,
@@ -58,6 +170,7 @@ function toSummary(message: FetchMessageObject): MessageSummaryDto {
     unread: !flags.includes('\\Seen'),
     starred: flags.includes('\\Flagged'),
     hasAttachments: hasAttachments(message.bodyStructure),
+    mailbox,
     size: message.size,
   }
 }
@@ -123,6 +236,7 @@ export class ImapProvider implements MailProvider {
   }
 
   async listMessages(options: ListMessagesOptions): Promise<MessagePageDto> {
+    if (options.mailbox === STARRED_MAILBOX) return this.listStarred(options)
     const query = options.query?.trim()
     return this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(options.mailbox)
@@ -156,7 +270,7 @@ export class ImapProvider implements MailProvider {
           if (pageUids.length === 0) return emptyPage(uids.length)
           return {
             mailbox: options.mailbox,
-            messages: await this.fetchSummaries(client, pageUids),
+            messages: await this.fetchSummaries(client, pageUids, options.mailbox),
             total: uids.length,
             page: options.page,
             pageSize: options.pageSize,
@@ -171,7 +285,7 @@ export class ImapProvider implements MailProvider {
 
         const messages: MessageSummaryDto[] = []
         for await (const message of client.fetch(`${start}:${end}`, fetchQuery)) {
-          messages.push(toSummary(message))
+          messages.push(toSummary(message, options.mailbox))
         }
         messages.sort((a, b) => b.uid - a.uid)
         return {
@@ -187,31 +301,106 @@ export class ImapProvider implements MailProvider {
     })
   }
 
+  /**
+   * Aggregate flagged messages for the virtual starred mailbox. Servers that
+   * expose a `\Flagged` folder (Gmail's Starred, for example) already do the
+   * aggregation, so a single SEARCH is enough; everyone else is searched
+   * folder by folder. Trash, Junk, Drafts and `\All` are skipped: the first
+   * three are not where people keep things for later, and `\All` would
+   * duplicate every hit from the folders already visited.
+   */
+  private async listStarred(options: ListMessagesOptions): Promise<MessagePageDto> {
+    const query = options.query?.trim() ?? ''
+    const cached = readStarredCache(this.creds.accountId, query)
+    const messages = cached ?? (await this.collectStarred(query))
+    if (!cached) writeStarredCache(this.creds.accountId, query, messages)
+
+    const start = (options.page - 1) * options.pageSize
+    return {
+      mailbox: STARRED_MAILBOX,
+      messages: messages.slice(start, start + options.pageSize),
+      total: messages.length,
+      page: options.page,
+      pageSize: options.pageSize,
+    }
+  }
+
+  private async collectStarred(query: string): Promise<MessageSummaryDto[]> {
+    const criteria = {
+      flagged: true,
+      ...(query
+        ? { or: [{ subject: query }, { from: query }, { to: query }, { text: query }] }
+        : {}),
+    }
+
+    return this.pool.withClient(this.creds, async (client) => {
+      const list = await client.list()
+      const selectable = list.filter((item) => item.listed && !item.flags.has('\\Noselect'))
+      const flagged = selectable.find((item) => item.specialUse === '\\Flagged')
+      const targets = flagged
+        ? [flagged]
+        : selectable.filter(
+            (item) =>
+              !['\\Trash', '\\Junk', '\\Drafts', '\\All'].includes(item.specialUse ?? '') &&
+              item.specialUse !== '\\Flagged',
+          )
+
+      const collected: MessageSummaryDto[] = []
+      for (const folder of targets) {
+        try {
+          const lock = await client.getMailboxLock(folder.path)
+          try {
+            const found = await client.search(criteria, { uid: true })
+            // Keep the newest hits; a folder with years of flagged mail must not
+            // make the starred view download thousands of envelopes.
+            const uids = Array.isArray(found) ? found.slice(-STARRED_MAX_PER_FOLDER) : []
+            if (uids.length === 0) continue
+            collected.push(...(await this.fetchSummaries(client, uids, folder.path)))
+          } finally {
+            lock.release()
+          }
+        } catch (error) {
+          this.logger.warn(`Could not search ${folder.path} for starred messages: ${String(error)}`)
+        }
+      }
+
+      return collected
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, STARRED_MAX_TOTAL)
+    })
+  }
+
   async getMessage(mailbox: string, uid: number): Promise<MessageDetailDto> {
+    const cacheKey = parsedCacheKey(this.creds.accountId, mailbox, uid)
     return this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
       try {
+        // When the parsed body is cached, only metadata is fetched: reopening a
+        // large message or downloading its attachments no longer pulls the source again.
+        const cached = readParsedCache(cacheKey)
         const message = await client.fetchOne(
           uid,
           {
             envelope: true,
             flags: true,
             uid: true,
-            source: true,
+            ...(cached ? {} : { source: true }),
             internalDate: true,
             bodyStructure: true,
             size: true,
           },
           { uid: true },
         )
-        // biome-ignore lint/complexity/useOptionalChain: optional chaining would not narrow the `false` branch of fetchOne
-        if (!message || !message.source) {
-          throw new NotFoundException('邮件不存在或已被删除')
-        }
+        if (!message) throw new NotFoundException('邮件不存在或已被删除')
         if (message.size && message.size > MAX_MESSAGE_BYTES) {
           throw new PayloadTooLargeException('邮件超过 40 MB，暂不支持在线查看')
         }
-        const parsed = await simpleParser(message.source)
+
+        let parsed = cached
+        if (!parsed) {
+          if (!message.source) throw new NotFoundException('邮件不存在或已被删除')
+          parsed = await parseMessage(cacheKey, message.source)
+        }
         return this.buildDetail(message, parsed, mailbox)
       } finally {
         lock.release()
@@ -220,24 +409,32 @@ export class ImapProvider implements MailProvider {
   }
 
   async getAttachment(mailbox: string, uid: number, index: number): Promise<AttachmentPayload> {
+    const cacheKey = parsedCacheKey(this.creds.accountId, mailbox, uid)
+    const cached = readParsedCache(cacheKey)
+    if (cached) return this.attachmentPayload(cached, index)
+
     return this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
       try {
         const message = await client.fetchOne(uid, { source: true, size: true }, { uid: true })
         // biome-ignore lint/complexity/useOptionalChain: optional chaining would not narrow the `false` branch of fetchOne
         if (!message || !message.source) throw new NotFoundException('邮件不存在或已被删除')
-        const parsed = await simpleParser(message.source)
-        const attachment = parsed.attachments[index]
-        if (!attachment) throw new NotFoundException('附件不存在')
-        return {
-          filename: attachment.filename ?? `attachment-${index + 1}`,
-          contentType: attachment.contentType || 'application/octet-stream',
-          content: attachment.content,
-        }
+        const parsed = await parseMessage(cacheKey, message.source)
+        return this.attachmentPayload(parsed, index)
       } finally {
         lock.release()
       }
     })
+  }
+
+  private attachmentPayload(parsed: ParsedMail, index: number): AttachmentPayload {
+    const attachment = parsed.attachments[index]
+    if (!attachment) throw new NotFoundException('附件不存在')
+    return {
+      filename: attachment.filename ?? `attachment-${index + 1}`,
+      contentType: attachment.contentType || 'application/octet-stream',
+      content: attachment.content,
+    }
   }
 
   async setFlags(mailbox: string, uid: number, flags: FlagUpdate): Promise<void> {
@@ -253,6 +450,7 @@ export class ImapProvider implements MailProvider {
         lock.release()
       }
     })
+    if (flags.flagged !== undefined) dropStarredCache(this.creds.accountId)
   }
 
   async move(mailbox: string, uid: number, destination: string): Promise<void> {
@@ -264,10 +462,12 @@ export class ImapProvider implements MailProvider {
         lock.release()
       }
     })
+    dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    dropStarredCache(this.creds.accountId)
   }
 
   async delete(mailbox: string, uid: number): Promise<DeleteResult> {
-    return this.pool.withClient(this.creds, async (client) => {
+    const result = await this.pool.withClient(this.creds, async (client) => {
       const lock = await client.getMailboxLock(mailbox)
       try {
         const list = await client.list()
@@ -286,6 +486,9 @@ export class ImapProvider implements MailProvider {
         lock.release()
       }
     })
+    dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    dropStarredCache(this.creds.accountId)
+    return result
   }
 
   async send(message: OutgoingMessage): Promise<SendResultDto> {
@@ -316,7 +519,11 @@ export class ImapProvider implements MailProvider {
     return { imap: 'ok', smtp: 'ok', durationMs: Date.now() - started }
   }
 
-  private async fetchSummaries(client: ImapFlow, uids: number[]): Promise<MessageSummaryDto[]> {
+  private async fetchSummaries(
+    client: ImapFlow,
+    uids: number[],
+    mailbox?: string,
+  ): Promise<MessageSummaryDto[]> {
     const result: MessageSummaryDto[] = []
     for await (const message of client.fetch(uids, {
       envelope: true,
@@ -326,7 +533,7 @@ export class ImapProvider implements MailProvider {
       internalDate: true,
       size: true,
     })) {
-      result.push(toSummary(message))
+      result.push(toSummary(message, mailbox))
     }
     result.sort((a, b) => b.uid - a.uid)
     return result
