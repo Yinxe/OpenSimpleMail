@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Inbox,
+  Keyboard,
   Loader2,
   Mail,
   MailCheck,
@@ -66,6 +67,7 @@ interface MailListProps {
   onMarkAllRead: () => void
   markingAllRead: boolean
   canMarkAllRead: boolean
+  onShowHelp: () => void
   refreshHint?: string
   error?: string | null
   onRetry: () => void
@@ -131,6 +133,7 @@ export function MailList({
   onMarkAllRead,
   markingAllRead,
   canMarkAllRead,
+  onShowHelp,
   refreshHint,
   error,
   onRetry,
@@ -192,6 +195,15 @@ export function MailList({
             <span>{unreadCount > 0 ? `全部已读 ${unreadCount}` : '全部已读'}</span>
           </button>
         ) : null}
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onShowHelp}
+          title="键盘快捷键（?）"
+          aria-label="键盘快捷键"
+        >
+          <Keyboard size={16} />
+        </button>
         <button
           type="button"
           className="icon-button"

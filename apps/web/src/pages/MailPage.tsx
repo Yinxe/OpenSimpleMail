@@ -22,6 +22,7 @@ import { DeleteMessageDialog } from '@/components/DeleteMessageDialog'
 import { Logo } from '@/components/Logo'
 import { MailList, type MailListItem, mailRowKey } from '@/components/MailList'
 import { MessageReader } from '@/components/MessageReader'
+import { Modal } from '@/components/Modal'
 import { folderLabel, Sidebar } from '@/components/Sidebar'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -32,6 +33,24 @@ import { useToast } from '@/lib/toast'
 import { useNewMailNotifications, useUnreadBadge } from '@/lib/unread'
 
 const DEFAULT_MAILBOX = 'INBOX'
+
+const SHORTCUTS: { keys: string[]; label: string }[] = [
+  { keys: ['c'], label: '写邮件' },
+  { keys: ['/'], label: '聚焦搜索' },
+  { keys: ['j'], label: '下一封' },
+  { keys: ['k'], label: '上一封' },
+  { keys: ['r'], label: '回复' },
+  { keys: ['a'], label: '全部回复' },
+  { keys: ['f'], label: '转发' },
+  { keys: ['s'], label: '收藏 / 取消收藏' },
+  { keys: ['u'], label: '标为已读 / 未读' },
+  { keys: ['e'], label: '归档' },
+  { keys: ['#'], label: '删除' },
+  { keys: ['x'], label: '选择当前邮件' },
+  { keys: ['g', 'i'], label: '回到收件箱' },
+  { keys: ['Esc'], label: '清空选择 / 关闭阅读区' },
+  { keys: ['?'], label: '打开 / 关闭快捷键' },
+]
 
 interface FlagVars {
   accountId: string
@@ -127,6 +146,8 @@ export function MailPage() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
   const selectionAnchor = useRef<string | null>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const goPrefix = useRef<number | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DeleteTarget | null>(null)
   const [keepDeleteConfirm, setKeepDeleteConfirm] = useState(true)
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
@@ -917,7 +938,31 @@ export function MailPage() {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
-      if (compose || addOpen || pendingDelete) return
+
+      if (event.key === '?') {
+        event.preventDefault()
+        setHelpOpen((open) => !open)
+        return
+      }
+      if (compose || addOpen || pendingDelete || helpOpen) return
+
+      if (event.key === 'g') {
+        goPrefix.current = Date.now()
+        return
+      }
+      if (event.key === 'i' && goPrefix.current && Date.now() - goPrefix.current < 1500) {
+        goPrefix.current = null
+        event.preventDefault()
+        update({
+          mailbox: DEFAULT_MAILBOX,
+          uid: null,
+          openAccount: null,
+          openMailbox: null,
+          page: null,
+        })
+        return
+      }
+      goPrefix.current = null
 
       if (event.key === 'c') {
         event.preventDefault()
@@ -946,16 +991,55 @@ export function MailPage() {
         if (next) selectMessage(next)
         return
       }
-      if (event.key === 'r' && detailQuery.data) {
-        event.preventDefault()
-        openCompose('reply', detailQuery.data)
-        return
+
+      const message = detailQuery.data
+      if (message && detailAccountId) {
+        if (event.key === 'r') {
+          event.preventDefault()
+          openCompose('reply', message)
+          return
+        }
+        if (event.key === 'a') {
+          event.preventDefault()
+          openCompose('replyAll', message)
+          return
+        }
+        if (event.key === 'f') {
+          event.preventDefault()
+          openCompose('forward', message)
+          return
+        }
+        if (event.key === 's') {
+          event.preventDefault()
+          starMessage(message, detailAccountId, message.mailbox)
+          return
+        }
+        if (event.key === 'u') {
+          event.preventDefault()
+          toggleRead(message, detailAccountId, message.mailbox)
+          return
+        }
+        if (event.key === 'e' && archivePath) {
+          event.preventDefault()
+          archiveMessage(message, detailAccountId, archivePath)
+          return
+        }
+        if (event.key === '#') {
+          event.preventDefault()
+          removeItem(message, detailAccountId, message.mailbox)
+          return
+        }
       }
-      if (event.key === 'a' && detailQuery.data) {
-        event.preventDefault()
-        openCompose('replyAll', detailQuery.data)
-        return
+
+      if (event.key === 'x' && selectedKey) {
+        const item = items.find((candidate) => rowKeyOf(candidate) === selectedKey)
+        if (item) {
+          event.preventDefault()
+          toggleSelect(item, false)
+          return
+        }
       }
+
       if (event.key === 'Escape') {
         if (selectedRows.size > 0) {
           clearSelection()
@@ -1088,6 +1172,7 @@ export function MailPage() {
             onMarkAllRead={markAllRead}
             markingAllRead={markAllReadMutation.isPending}
             canMarkAllRead={canMarkAllRead}
+            onShowHelp={() => setHelpOpen(true)}
             error={listError ? errorMessage(listError) : null}
             onRetry={retryList}
             refreshHint={
@@ -1180,6 +1265,26 @@ export function MailPage() {
           })
         }}
       />
+
+      <Modal
+        open={helpOpen}
+        title="键盘快捷键"
+        subtitle="在邮件列表或阅读区使用；输入框内不生效"
+        onClose={() => setHelpOpen(false)}
+      >
+        <div className="shortcut-list">
+          {SHORTCUTS.map((shortcut) => (
+            <div className="shortcut-row" key={shortcut.label}>
+              <span className="shortcut-keys">
+                {shortcut.keys.map((key) => (
+                  <kbd key={key}>{key}</kbd>
+                ))}
+              </span>
+              <span className="shortcut-label">{shortcut.label}</span>
+            </div>
+          ))}
+        </div>
+      </Modal>
 
       <DeleteMessageDialog
         open={Boolean(pendingDelete)}

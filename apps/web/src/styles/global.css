@@ -587,6 +587,30 @@ code {
   overflow: auto;
 }
 
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.shortcut-row:last-child {
+  border-bottom: 0;
+}
+.shortcut-keys {
+  display: flex;
+  gap: 4px;
+}
+.shortcut-label {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
 .modal__foot {
   padding: 14px 22px;
   border-top: 1px solid var(--line);
