@@ -109,7 +109,7 @@ docker compose up -d --build
 | `PORT` | `4010` | API / 生产 HTTP 端口；Docker 容器内固定为 `4000` |
 | `WEB_PORT` | `5174` | 本地开发时 Vite 的端口（生产与 Docker 不使用） |
 | `HOST` | `0.0.0.0` | 监听地址 |
-| `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite 文件路径，相对路径按进程工作目录解析 |
+| `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite 文件路径；相对路径按项目根目录解析（不随启动目录变化） |
 | `WEB_ORIGIN` | `http://localhost:5174,http://127.0.0.1:5174` | 允许携带 Cookie 调用 API 的浏览器来源，逗号分隔 |
 | `DEMO_ENABLED` | `true` | 首次初始化时的演示模式默认值；初始化后以「设置 → 系统设置」中的值为准 |
 | `MAX_ATTACHMENT_MB` | `25` | 单封邮件附件总大小上限（MB） |

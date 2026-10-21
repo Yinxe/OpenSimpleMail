@@ -109,7 +109,7 @@ Disabling automatic refresh still leaves window-focus refresh and the manual ref
 | `PORT` | `4010` | API / production HTTP port; fixed to `4000` inside Docker |
 | `WEB_PORT` | `5174` | Vite dev-server port (not used in production or Docker) |
 | `HOST` | `0.0.0.0` | Listen address |
-| `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite file |
+| `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite file; relative paths resolve from the repository root, not the cwd |
 | `WEB_ORIGIN` | `http://localhost:5174,http://127.0.0.1:5174` | Allowed browser origins, comma separated |
 | `DEMO_ENABLED` | `true` | Initial demo flag for a fresh database; after setup the value in Settings wins |
 | `MAX_ATTACHMENT_MB` | `25` | Total outgoing attachment limit |

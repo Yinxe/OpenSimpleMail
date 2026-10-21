@@ -1,4 +1,8 @@
-import { resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
+
+// apps/server/src/config and apps/server/dist/config are both four levels below
+// the repository root, so this works in dev, tests and the Docker image.
+const PROJECT_ROOT = resolve(__dirname, '../../../..')
 
 export interface AppConfig {
   nodeEnv: string
@@ -59,13 +63,18 @@ export function loadAppConfig(): AppConfig {
     .map((origin) => origin.trim())
     .filter(Boolean)
 
+  // A relative DATABASE_PATH is anchored to the repository root, never to the
+  // process working directory: `npm run dev` starts with apps/server as cwd,
+  // while `npm start` runs from the root, and both must open the same file.
+  const databasePath = process.env.DATABASE_PATH?.trim() || 'data/open-simple-mail.db'
+
   return {
     nodeEnv,
     isProduction,
     port,
     host: process.env.HOST ?? '0.0.0.0',
     appSecret,
-    databasePath: resolve(process.env.DATABASE_PATH ?? 'data/open-simple-mail.db'),
+    databasePath: isAbsolute(databasePath) ? databasePath : resolve(PROJECT_ROOT, databasePath),
     webOrigins,
     sessionDays: int(process.env.SESSION_DAYS, 30),
     demoEnabled: bool(process.env.DEMO_ENABLED, true),
