@@ -468,6 +468,36 @@ describe('account security', () => {
     expect(rejected.status).toBe(400)
   })
 
+  it('refuses mail hosts on private networks', async () => {
+    const blocked = await client.json<{ message: string | string[] }>('/accounts', {
+      ...post({
+        name: 'LAN Mail',
+        email: 'lan@example.com',
+        username: 'lan',
+        password: 'a-strong-password',
+        imap: { host: '127.0.0.1', port: 993, secure: true },
+        smtp: { host: '127.0.0.1', port: 465, secure: true },
+        skipTest: true,
+      }),
+    })
+    expect(blocked.status).toBe(400)
+    expect(String(blocked.body.message)).toContain('内网')
+
+    const allowed = await client.json<AccountDto>('/accounts', {
+      ...post({
+        name: 'Public Mail',
+        email: 'public@example.com',
+        username: 'public',
+        password: 'a-strong-password',
+        imap: { host: '1.1.1.1', port: 993, secure: true },
+        smtp: { host: '1.1.1.1', port: 465, secure: true },
+        skipTest: true,
+      }),
+    })
+    expect(allowed.status).toBe(201)
+    await client.json(`/accounts/${allowed.body.id}`, { method: 'DELETE' })
+  })
+
   it('records successful and failed sign-in attempts', async () => {
     const events = await client.json<LoginEventDto[]>('/auth/login-events?limit=20')
     expect(events.status).toBe(200)

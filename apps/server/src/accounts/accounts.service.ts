@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import type { AccountDto, TestResultDto } from '@osm/shared'
+import { assertAllowedMailHost } from '../common/network-guard'
 import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { CryptoService } from '../core/crypto.service'
 import { DatabaseService } from '../core/database.service'
@@ -55,6 +56,18 @@ export class AccountsService {
     }
   }
 
+  /** Refuse loopback/LAN mail hosts unless the operator opted in. */
+  private async assertMailHosts(imapHost: string, smtpHost: string): Promise<void> {
+    const options = {
+      allowPrivate: this.config.allowPrivateMailHosts,
+      allowlist: this.config.mailHostAllowlist,
+    }
+    await assertAllowedMailHost(imapHost, options)
+    if (smtpHost.trim() && smtpHost.trim().toLowerCase() !== imapHost.trim().toLowerCase()) {
+      await assertAllowedMailHost(smtpHost, options)
+    }
+  }
+
   async create(userId: string, dto: CreateAccountDto): Promise<AccountDto> {
     const email = dto.email.trim().toLowerCase()
     if (!dto.name.trim()) throw new BadRequestException('账户名称不能为空')
@@ -62,6 +75,8 @@ export class AccountsService {
       .prepare('SELECT id FROM accounts WHERE user_id = ? AND lower(email) = ?')
       .get(userId, email)
     if (duplicate) throw new ConflictException('该邮箱已经添加过了')
+
+    await this.assertMailHosts(dto.imap.host, dto.smtp.host)
 
     const probe: MailCredentials = {
       accountId: `probe-${randomUUID()}`,
@@ -126,6 +141,8 @@ export class AccountsService {
       port: row.smtp_port,
       secure: row.smtp_secure === 1,
     }
+    await this.assertMailHosts(imap.host, smtp.host)
+
     const password = dto.password?.trim()
       ? dto.password
       : row.secret

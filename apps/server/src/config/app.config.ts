@@ -28,6 +28,10 @@ export interface AppConfig {
   trustProxy: number
   /** Optional emergency password for administrator recovery. Empty disables it. */
   adminRecoveryPassword: string
+  /** Allow IMAP/SMTP hosts that resolve to private or loopback addresses. */
+  allowPrivateMailHosts: boolean
+  /** Hostnames that stay allowed even when private networks are blocked. */
+  mailHostAllowlist: string[]
   /** Absolute path to the built React app, or null when it is not present. */
   webDist: string | null
   version: string
@@ -64,6 +68,11 @@ export function loadAppConfig(): AppConfig {
   if (adminRecoveryPassword && adminRecoveryPassword.length < 12) {
     throw new Error('ADMIN_RECOVERY_PASSWORD must be at least 12 characters long')
   }
+
+  const mailHostAllowlist = (process.env.MAIL_HOST_ALLOWLIST ?? '')
+    .split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean)
 
   const webOrigins = (process.env.WEB_ORIGIN ?? 'http://localhost:5174,http://127.0.0.1:5174')
     .split(',')
@@ -103,6 +112,8 @@ export function loadAppConfig(): AppConfig {
     cookieSecure: bool(process.env.COOKIE_SECURE, false),
     trustProxy: int(process.env.TRUST_PROXY, 0),
     adminRecoveryPassword,
+    allowPrivateMailHosts: bool(process.env.ALLOW_PRIVATE_MAIL_HOSTS, false),
+    mailHostAllowlist,
     webDist: process.env.WEB_DIST ? resolve(process.env.WEB_DIST) : null,
     version: process.env.APP_VERSION ?? '0.1.0',
   }

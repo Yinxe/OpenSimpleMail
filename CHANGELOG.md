@@ -4,7 +4,9 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ## [Unreleased]
 
-### Added
+### Security
+
+- Refuse mail server hosts on loopback, private, link-local, CGNAT, multicast and cloud-metadata addresses when an account is saved, including hostnames that resolve to them. Self-hosted servers on a LAN can opt back in with `ALLOW_PRIVATE_MAIL_HOSTS=true` or list hosts in `MAIL_HOST_ALLOWLIST`; both are documented in `.env.example`.
 
 - Two-factor authentication: enable TOTP from Settings (RFC 6238, SHA-1, 6 digits, 30 seconds), add the secret or `otpauth://` link to any authenticator, and confirm with one code. Sign-in becomes password → 5-minute challenge token → code or a one-time recovery code; codes cannot be replayed, recovery codes are removed when used and a challenge dies after five failures. The secret is stored encrypted with `APP_SECRET`.
 
