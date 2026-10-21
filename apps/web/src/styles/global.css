@@ -345,6 +345,7 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 32px;
   height: 32px;
   padding: 0;
@@ -1212,6 +1213,39 @@ code {
   width: auto;
   min-width: 0;
 }
+.folder-row__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sidebar-muted);
+  flex: none;
+}
+.folder-row__toggle:hover {
+  color: var(--sidebar-ink);
+}
+.folder-row__toggle--empty {
+  pointer-events: none;
+}
+.folder-tree__group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.folder-item--label {
+  cursor: default;
+  color: var(--sidebar-muted);
+  opacity: 0.85;
+}
+.folder-item--label:hover {
+  background: transparent;
+  color: var(--sidebar-muted);
+}
+
 .folder-row__actions {
   display: flex;
   align-items: center;
@@ -4261,5 +4295,298 @@ select.input {
   }
   .pref-actions {
     justify-content: flex-end;
+  }
+}
+
+/* --------------------------- touch targets (mobile) -------------------------- */
+/* Every control a thumb has to hit is at least 40px, and 44px on the primary
+   actions. The message row drops its hover-only toolbar for two always-visible
+   actions; mark read/unread lives in the reader and the bulk bar instead. */
+@media (hover: none) {
+  .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+  /* Forms: a 38px field is fine with a mouse, not with a thumb. */
+  .input,
+  select.input {
+    height: 42px;
+  }
+  .button--sm {
+    height: 40px;
+    padding: 0 14px;
+  }
+  .check input {
+    width: 18px;
+    height: 18px;
+  }
+  /* Keyboard-shortcut help has no audience on a touch screen, and the
+     "mark all read" label gives way to an icon so the folder title keeps room. */
+  .mail-list__help {
+    display: none;
+  }
+  .mail-list__mark-read {
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
+  }
+  .mail-list__mark-read span {
+    display: none;
+  }
+  .mail-list__heading h1 {
+    overflow: hidden;
+    font-size: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mail-list__select-all {
+    width: 40px;
+    height: 40px;
+  }
+  .mail-list__select-all input {
+    width: 18px;
+    height: 18px;
+  }
+  .mail-list__search {
+    height: 42px;
+  }
+  .mail-list__search-clear {
+    width: 32px;
+    height: 32px;
+  }
+  .mail-list__mark-read {
+    height: 40px;
+  }
+  .bulk-bar button {
+    min-height: 36px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
+  .nav-item,
+  .folder-item {
+    height: 44px;
+  }
+  .sidebar__add,
+  .folder-row__actions button {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+  }
+  .reader-mode {
+    height: 40px;
+    padding: 0 14px;
+  }
+  .reader__toolbar .button,
+  .reader__toolbar .icon-button {
+    height: 40px;
+  }
+  .reader__toolbar .button {
+    padding: 0 12px;
+  }
+  .composer__toolbar button {
+    width: 40px;
+    height: 40px;
+  }
+  .composer__foot .button {
+    height: 40px;
+    padding: 0 14px;
+  }
+  .composer__toolbar button svg {
+    width: 18px;
+    height: 18px;
+  }
+  .toast__action {
+    min-height: 36px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
+  .toast__close {
+    padding: 8px;
+  }
+}
+
+/* Row actions need a real 44px target on tablets too, but a touchscreen laptop
+   at desktop width keeps the compact toolbar. */
+@media (hover: none) and (max-width: 1024px) {
+  .row-action {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+  .row-action svg {
+    width: 19px;
+    height: 19px;
+  }
+  .row-action:active {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .row-action--danger:active {
+    color: var(--danger);
+  }
+  .mail-row {
+    grid-template-columns: 40px 16px 36px minmax(0, 1fr) auto;
+  }
+  .mail-row__check {
+    width: 40px;
+    height: 40px;
+  }
+  .mail-row__check input {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (max-width: 640px) {
+  .mail-list__head {
+    gap: 6px;
+    padding: 14px 12px 10px;
+  }
+  .mail-list__search {
+    margin: 4px 12px 10px;
+  }
+  /* One row on a phone: tighter pills, then a horizontal scroll rather than a
+     wrapped second line that separates "取消" from the actions. */
+  .bulk-bar {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .bulk-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .bulk-bar__count {
+    flex: none;
+    position: sticky;
+    left: 0;
+    padding-right: 2px;
+    background: var(--accent-soft);
+  }
+  .bulk-bar button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 11px;
+    font-size: 11.5px;
+  }
+  /* Read/unread are icons on a phone so the whole bar stays on one row. */
+  .bulk-bar button span {
+    display: none;
+  }
+  .bulk-bar__icon {
+    min-width: 40px;
+    padding: 0 10px;
+  }
+  .bulk-bar__clear {
+    margin-left: auto;
+  }
+
+  .mail-row {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-areas: "avatar main actions";
+    align-items: center;
+    gap: 8px;
+    padding: 10px 4px 10px 12px;
+  }
+  .mail-row > .avatar {
+    grid-area: avatar;
+    justify-self: center;
+  }
+  .mail-row__main {
+    grid-area: main;
+  }
+  .mail-row__actions {
+    grid-area: actions;
+    gap: 0;
+  }
+  /* The checkbox takes over the avatar slot once a selection is running. */
+  .mail-row__check {
+    grid-area: avatar;
+    justify-self: start;
+    display: none;
+  }
+  .mail-list.has-selection .mail-row__check,
+  .mail-row.is-checked .mail-row__check {
+    display: inline-flex;
+  }
+  .mail-list.has-selection .mail-row > .avatar,
+  .mail-row.is-checked > .avatar {
+    display: none;
+  }
+  /* Read state is carried by the accent bar and the weight of the text. */
+  .mail-row__status {
+    display: none;
+  }
+  .mail-row.is-unread::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 0;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
+  }
+  .row-action--read {
+    display: none;
+  }
+  .mail-row__sender {
+    font-size: 13px;
+  }
+  .mail-row__subject {
+    margin-top: 3px;
+    font-size: 14px;
+  }
+  .mail-row__preview {
+    margin-top: 4px;
+    -webkit-line-clamp: 1;
+    font-size: 12px;
+  }
+  .mail-row__date {
+    font-size: 10.5px;
+  }
+  .mail-row__meta {
+    margin-top: 4px;
+  }
+  .mail-row__swipe-hint {
+    font-size: 12px;
+  }
+  .mail-row__swipe-hint.is-left {
+    right: 100px;
+  }
+  .mail-row__swipe-hint.is-right {
+    left: 14px;
+  }
+
+  .reader__toolbar {
+    gap: 6px;
+    height: 56px;
+    padding: 0 6px;
+  }
+  .reader__toolbar-left,
+  .reader__toolbar-right {
+    gap: 0;
+  }
+  .reader__toolbar-right .button {
+    padding: 0 10px;
+  }
+  .reader__viewbar {
+    gap: 8px;
+  }
+  .reader-mode {
+    flex: 1;
+    justify-content: center;
+    padding: 0 6px;
+    font-size: 11.5px;
+  }
+  .toast-stack {
+    left: 12px;
+    right: 12px;
   }
 }

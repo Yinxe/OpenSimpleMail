@@ -20,6 +20,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Changed
 
+- Pointer-sized controls on touch screens: row actions grow from 24px to 44px with 19px icons, the header, reader toolbar, sidebar rows, form fields and composer toolbar reach 40px, and no control in the list, reader, sidebar, settings, composer or login is smaller than 36px. The message row drops to two always-visible actions (star, delete) with a 40px checkbox slot, long-press enters selection mode, and a tap while selecting toggles a row instead of opening it; mark read/unread moves to the reader toolbar and the bulk bar. `icon-button` no longer shrinks inside a tight flex row.
 - Undo archive and delete: `move`/`delete` responses now report the destination mailbox and the source→destination UID map from IMAP `COPYUID`, so the toast can move a message (or a whole batch, grouped per account) back to where it came from. Servers without UIDPLUS simply get no undo entry.
 - Stream attachments through disk instead of the heap: outgoing uploads are written to `data/attachments/upload/` and read back by the MIME composer, while incoming messages are parsed from the IMAP stream with each attachment extracted to `data/attachments/cache/`. A 25 MB send or a 40 MB message no longer holds tens of megabytes in memory.
 - Replace the in-memory parsed-message cache with one that keeps only the text body and attachment metadata, backed by a disk cache bounded by `ATTACHMENT_CACHE_MB` (default 256 MB), evicted least-recently-used and swept on startup.
@@ -43,6 +44,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- The sidebar groups mailboxes into a tree using each account's IMAP delimiter: parent folders expand and collapse, and intermediate levels without a real mailbox render as plain group labels.
 - Attachment upload progress in the composer: sending with attachments goes through XHR so the footer can show "正在上传附件 N%" before switching to the sending state.
 - "Do not ask again" in the delete dialog now applies to the account being cleaned up instead of every mailbox; the Settings switch stays a global default.
 

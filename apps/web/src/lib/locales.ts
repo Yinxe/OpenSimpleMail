@@ -464,6 +464,8 @@ export const zh = {
   'sidebar.deleteFolder': '删除文件夹',
   'sidebar.deleteFolderName': '删除 {name}',
   'sidebar.emptyTrash': '清空废纸篓',
+  'sidebar.expandFolder': '展开子文件夹',
+  'sidebar.collapseFolder': '收起子文件夹',
   'sidebar.loadingFolders': '正在读取文件夹…',
   'sidebar.folderHint': '选择上方某个邮箱查看它的文件夹；全部收件箱会按时间合并所有账户的来信。',
   'sidebar.settings': '设置',
@@ -1125,6 +1127,8 @@ export const en: Record<MessageKey, string> = {
   'sidebar.deleteFolder': 'Delete folder',
   'sidebar.deleteFolderName': 'Delete {name}',
   'sidebar.emptyTrash': 'Empty trash',
+  'sidebar.expandFolder': 'Expand subfolders',
+  'sidebar.collapseFolder': 'Collapse subfolders',
   'sidebar.loadingFolders': 'Loading folders…',
   'sidebar.folderHint':
     'Pick an account above to see its folders; the unified inbox merges every account by date.',
