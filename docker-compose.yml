@@ -9,6 +9,9 @@ services:
       - .env
     environment:
       NODE_ENV: production
+      # The image and the port mapping are fixed to 4000; .env may set a
+      # different PORT for local `npm run dev`.
+      PORT: 4000
       DATABASE_PATH: /app/data/open-simple-mail.db
     volumes:
       - open-simple-mail-data:/app/data

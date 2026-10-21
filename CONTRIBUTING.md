@@ -13,8 +13,8 @@ cp .env.example .env
 npm run dev
 ```
 
-- Web dev server: <http://localhost:5173>
-- API: <http://localhost:4000/api>
+- Web dev server: <http://localhost:5174> (`WEB_PORT` in `.env`)
+- API: <http://localhost:4010/api> (`PORT` in `.env`)
 - Demo login: create a workspace from the login page (no mailbox needed)
 
 ## Repository layout

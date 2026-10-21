@@ -54,7 +54,7 @@ export function loadAppConfig(): AppConfig {
     throw new Error('ADMIN_RECOVERY_PASSWORD must be at least 12 characters long')
   }
 
-  const webOrigins = (process.env.WEB_ORIGIN ?? 'http://localhost:5173,http://127.0.0.1:5173')
+  const webOrigins = (process.env.WEB_ORIGIN ?? 'http://localhost:5174,http://127.0.0.1:5174')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean)

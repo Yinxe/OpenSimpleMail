@@ -47,14 +47,14 @@ openssl rand -base64 32   # put this into APP_SECRET
 npm run dev
 ```
 
-Open <http://localhost:5173>. The first visit starts a setup wizard where you create the administrator account and choose the initial system policy; after that you can add a mailbox or try the demo workspace.
+Open <http://localhost:5174> (`WEB_PORT` in `.env`; Vite proxies `/api` to `PORT`). The first visit starts a setup wizard where you create the administrator account and choose the initial system policy; after that you can add a mailbox or try the demo workspace.
 
 ### Production
 
 ```bash
 npm run build
 APP_SECRET="$(openssl rand -base64 32)" npm start
-# http://localhost:4000
+# http://localhost:4010 (PORT in .env)
 ```
 
 The NestJS server serves the built React app, so a single process is enough.
@@ -106,10 +106,11 @@ Disabling automatic refresh still leaves window-focus refresh and the manual ref
 | Variable | Default | Description |
 | --- | --- | --- |
 | `APP_SECRET` | dev fallback | **Required in production**, 24+ chars. Derives the credential encryption key |
-| `PORT` | `4000` | HTTP port |
+| `PORT` | `4010` | API / production HTTP port; fixed to `4000` inside Docker |
+| `WEB_PORT` | `5174` | Vite dev-server port (not used in production or Docker) |
 | `HOST` | `0.0.0.0` | Listen address |
 | `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite file |
-| `WEB_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed browser origins, comma separated |
+| `WEB_ORIGIN` | `http://localhost:5174,http://127.0.0.1:5174` | Allowed browser origins, comma separated |
 | `DEMO_ENABLED` | `true` | Initial demo flag for a fresh database; after setup the value in Settings wins |
 | `MAX_ATTACHMENT_MB` | `25` | Total outgoing attachment limit |
 | `SESSION_DAYS` | `30` | Session lifetime |

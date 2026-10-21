@@ -1,6 +1,7 @@
 import 'reflect-metadata'
 import { existsSync } from 'node:fs'
-import { extname, join } from 'node:path'
+import { extname, join, resolve } from 'node:path'
+import { loadEnvFile } from 'node:process'
 import { Logger } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
@@ -9,6 +10,15 @@ import type { NextFunction, Request, Response } from 'express'
 import helmet from 'helmet'
 import { AppModule } from './app.module'
 import { APP_CONFIG, type AppConfig } from './config/app.config'
+
+// Load the repository .env before Nest reads process.env. `npm run dev` starts
+// this file with apps/server as the working directory, while `npm start` runs
+// from the repository root; try both locations. Real environment variables
+// (Docker, CI) always win: loadEnvFile does not overwrite them.
+const envFile = [resolve('.env'), resolve(__dirname, '../../../.env')].find((file) =>
+  existsSync(file),
+)
+if (envFile) loadEnvFile(envFile)
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap')

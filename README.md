@@ -72,8 +72,8 @@ openssl rand -base64 32
 npm run dev
 ```
 
-- Web：<http://localhost:5173>（Vite 会把 `/api` 代理到 4000）
-- API：<http://localhost:4000/api/health>
+- Web：<http://localhost:5174>（`.env` 的 `WEB_PORT`；Vite 会把 `/api` 代理到 `PORT`）
+- API：<http://localhost:4010/api/health>（`.env` 的 `PORT`）
 
 首次打开会进入启动向导：创建管理员账号，并设置站点名称、是否开放公开注册、是否启用演示模式。完成后即可添加邮箱；也可以先在登录页点「用演示邮箱直接体验」。
 
@@ -84,7 +84,7 @@ npm install
 npm run build
 
 APP_SECRET="$(openssl rand -base64 32)" npm start
-# 打开 http://localhost:4000
+# 打开 http://localhost:4010（.env 的 PORT）
 ```
 
 生产模式下 NestJS 会直接托管 `apps/web/dist`，只需要一个 Node 进程。
@@ -106,10 +106,11 @@ docker compose up -d --build
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `APP_SECRET` | 开发环境内置值 | **生产必填**，至少 24 字符。用于派生凭据加密密钥和会话哈希；更换后已保存的邮箱密码将无法解密 |
-| `PORT` | `4000` | HTTP 端口 |
+| `PORT` | `4010` | API / 生产 HTTP 端口；Docker 容器内固定为 `4000` |
+| `WEB_PORT` | `5174` | 本地开发时 Vite 的端口（生产与 Docker 不使用） |
 | `HOST` | `0.0.0.0` | 监听地址 |
 | `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite 文件路径，相对路径按进程工作目录解析 |
-| `WEB_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` | 允许携带 Cookie 调用 API 的浏览器来源，逗号分隔 |
+| `WEB_ORIGIN` | `http://localhost:5174,http://127.0.0.1:5174` | 允许携带 Cookie 调用 API 的浏览器来源，逗号分隔 |
 | `DEMO_ENABLED` | `true` | 首次初始化时的演示模式默认值；初始化后以「设置 → 系统设置」中的值为准 |
 | `MAX_ATTACHMENT_MB` | `25` | 单封邮件附件总大小上限（MB） |
 | `SESSION_DAYS` | `30` | 登录会话有效期（天） |

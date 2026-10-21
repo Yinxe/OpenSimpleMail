@@ -44,6 +44,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 - Starring is now labelled 收藏/取消收藏 and points at the sidebar view; un-starring inside the starred view removes the row immediately.
 - Deleting a message removes its row optimistically and reports whether it went to the trash or was deleted permanently.
+- Dev ports moved to API `4010` and Vite `5174` (`PORT` / `WEB_PORT` in `.env`); Vite reads the same `.env` for its proxy and fails loudly when the web port is taken. Docker still pins the container to `4000`.
 
 ### Security
 
