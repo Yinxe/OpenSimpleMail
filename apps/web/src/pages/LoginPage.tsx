@@ -183,7 +183,7 @@ export function LoginPage() {
                 <input
                   type="password"
                   autoComplete="current-password"
-                  placeholder="至少 8 个字符"
+                  placeholder={t('login.passwordPlaceholder')}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required

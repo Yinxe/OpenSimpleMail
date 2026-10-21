@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { useI18n } from './i18n'
 
 type ToastKind = 'success' | 'error' | 'info'
 
@@ -35,6 +36,7 @@ interface ToastContextValue {
 const ToastContext = createContext<ToastContextValue | null>(null)
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n()
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const counter = useRef(0)
 
@@ -99,7 +101,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 type="button"
                 className="toast__close"
                 onClick={() => remove(toast.id)}
-                aria-label="关闭提示"
+                aria-label={t('common.closeToast')}
               >
                 <X size={14} />
               </button>

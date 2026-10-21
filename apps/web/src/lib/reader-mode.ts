@@ -2,10 +2,10 @@ export type ReaderMode = 'full' | 'text' | 'code'
 
 const STORAGE_KEY = 'osm:reader-mode'
 
-export const READER_MODES: Array<{ value: ReaderMode; label: string }> = [
-  { value: 'full', label: '完整内容' },
-  { value: 'text', label: '简约文字' },
-  { value: 'code', label: '验证码' },
+export const READER_MODES: Array<{ value: ReaderMode }> = [
+  { value: 'full' },
+  { value: 'text' },
+  { value: 'code' },
 ]
 
 export function readReaderMode(): ReaderMode {

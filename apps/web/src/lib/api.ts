@@ -10,13 +10,24 @@ export class ApiError extends Error {
   }
 }
 
+function fallbackMessage(status: number): string {
+  let locale: string | null = null
+  try {
+    locale = window.localStorage.getItem('osm.locale')
+  } catch {
+    // Storage can be unavailable; fall back to the browser language.
+  }
+  const english = locale === 'en' || (locale === null && !navigator.language.startsWith('zh'))
+  return english ? `Request failed (${status})` : `请求失败（${status}）`
+}
+
 async function parseError(response: Response): Promise<ApiError> {
   try {
     const body = (await response.json()) as ApiErrorBody
     const message = Array.isArray(body.message) ? body.message.join('；') : body.message
-    return new ApiError(response.status, message || `请求失败（${response.status}）`)
+    return new ApiError(response.status, message || fallbackMessage(response.status))
   } catch {
-    return new ApiError(response.status, `请求失败（${response.status}）`)
+    return new ApiError(response.status, fallbackMessage(response.status))
   }
 }
 

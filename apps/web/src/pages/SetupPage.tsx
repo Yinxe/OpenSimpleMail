@@ -18,15 +18,18 @@ import { Spinner } from '@/components/Spinner'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useI18n } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/locales'
 
-const STEPS = [
-  { id: 1, label: '欢迎', detail: '了解首次启动' },
-  { id: 2, label: '管理员', detail: '创建最高权限账号' },
-  { id: 3, label: '系统配置', detail: '注册与演示设置' },
+const STEPS: { id: number; labelKey: MessageKey; detailKey: MessageKey }[] = [
+  { id: 1, labelKey: 'setup.step1Label', detailKey: 'setup.step1Detail' },
+  { id: 2, labelKey: 'setup.step2Label', detailKey: 'setup.step2Detail' },
+  { id: 3, labelKey: 'setup.step3Label', detailKey: 'setup.step3Detail' },
 ]
 
 export function SetupPage() {
   const { config, loading, user, setup } = useAuth()
+  const { t } = useI18n()
   const navigate = useNavigate()
 
   const [step, setStep] = useState(1)
@@ -53,7 +56,7 @@ export function SetupPage() {
     return (
       <div className="boot">
         <Logo />
-        <span className="boot__hint">正在检查系统状态…</span>
+        <span className="boot__hint">{t('setup.checking')}</span>
       </div>
     )
   }
@@ -63,14 +66,14 @@ export function SetupPage() {
       <div className="setup setup--error">
         <div className="setup__error-card">
           <Logo compact />
-          <h1>无法连接后端服务</h1>
-          <p>请确认 OpenSimpleMail 服务已经启动，然后重试。</p>
+          <h1>{t('setup.backendDownTitle')}</h1>
+          <p>{t('setup.backendDownBody')}</p>
           <button
             type="button"
             className="button button--primary"
             onClick={() => window.location.reload()}
           >
-            重新加载
+            {t('setup.reload')}
           </button>
         </div>
       </div>
@@ -86,20 +89,20 @@ export function SetupPage() {
     setError('')
     if (step === 2) {
       if (!name.trim() || !email.trim()) {
-        setError('请填写管理员昵称和邮箱')
+        setError(t('setup.needAdmin'))
         return
       }
       if (password.length < 8) {
-        setError('管理员密码至少需要 8 个字符')
+        setError(t('setup.adminPasswordShort'))
         return
       }
       if (password !== confirm) {
-        setError('两次输入的密码不一致')
+        setError(t('setup.passwordMismatch'))
         return
       }
     }
     if (step === 3 && !siteName.trim()) {
-      setError('请填写站点名称')
+      setError(t('setup.needSiteName'))
       return
     }
     setStep((current) => Math.min(3, current + 1))
@@ -109,7 +112,7 @@ export function SetupPage() {
     event.preventDefault()
     setError('')
     if (!siteName.trim()) {
-      setError('请填写站点名称')
+      setError(t('setup.needSiteName'))
       return
     }
     setBusy(true)
@@ -138,11 +141,11 @@ export function SetupPage() {
         <div className="setup__intro">
           <p className="eyebrow">FIRST RUN</p>
           <h1>
-            欢迎来到
+            {t('setup.welcomeTitle1')}
             <br />
-            你自己的邮件工作台。
+            {t('setup.welcomeTitle2')}
           </h1>
-          <p>只需要三步，就能把系统交给管理员并开始接入邮箱。</p>
+          <p>{t('setup.welcomeLead')}</p>
         </div>
 
         <ol className="setup-steps">
@@ -155,8 +158,8 @@ export function SetupPage() {
                   {state === 'done' ? <Check size={14} /> : item.id}
                 </span>
                 <span className="setup-step__text">
-                  <strong>{item.label}</strong>
-                  <small>{item.detail}</small>
+                  <strong>{t(item.labelKey)}</strong>
+                  <small>{t(item.detailKey)}</small>
                 </span>
               </li>
             )
@@ -171,7 +174,9 @@ export function SetupPage() {
 
       <main className="setup__main">
         <div className="setup__topbar">
-          <span className="setup__progress">{step === 4 ? '初始化完成' : `步骤 ${step} / 3`}</span>
+          <span className="setup__progress">
+            {step === 4 ? t('setup.progressDone') : t('setup.progressStep', { step })}
+          </span>
           <ThemeToggle />
         </div>
 
@@ -182,25 +187,22 @@ export function SetupPage() {
                 <Sparkles size={22} />
               </span>
               <p className="eyebrow">SETUP WIZARD</p>
-              <h2>先把钥匙交给你。</h2>
-              <p className="setup__lead">
-                这是系统的首次启动。接下来会创建唯一的初始管理员，并确定公开注册、演示模式等基础配置。
-                这些选项之后都可以在「设置 → 系统设置」中修改。
-              </p>
+              <h2>{t('setup.step1Title')}</h2>
+              <p className="setup__lead">{t('setup.step1Lead')}</p>
               <ul className="setup__bullets">
                 <li>
-                  <ShieldCheck size={15} /> 管理员拥有系统配置权限，普通用户只能管理自己的邮箱
+                  <ShieldCheck size={15} /> {t('setup.bullet1')}
                 </li>
                 <li>
-                  <LockKeyhole size={15} /> 公开注册默认关闭，适合个人或小团队自托管
+                  <LockKeyhole size={15} /> {t('setup.bullet2')}
                 </li>
                 <li>
-                  <Globe2 size={15} /> 支持多个 IMAP / SMTP 邮箱，数据保存在本机 SQLite
+                  <Globe2 size={15} /> {t('setup.bullet3')}
                 </li>
               </ul>
               <div className="setup__actions">
                 <button type="button" className="button button--primary" onClick={() => setStep(2)}>
-                  开始初始化 <ArrowRight size={16} />
+                  {t('setup.start')} <ArrowRight size={16} />
                 </button>
               </div>
             </div>
@@ -212,20 +214,18 @@ export function SetupPage() {
                 <UserRound size={22} />
               </span>
               <p className="eyebrow">STEP 2 · ADMIN</p>
-              <h2>创建管理员账号</h2>
-              <p className="setup__lead">
-                这是系统的最高权限账号。请使用一个你能长期保管的邮箱和强密码。
-              </p>
+              <h2>{t('setup.step2Title')}</h2>
+              <p className="setup__lead">{t('setup.step2Lead')}</p>
 
               <div className="setup__form">
                 <label className="field">
-                  <span className="field__label">管理员昵称</span>
+                  <span className="field__label">{t('setup.adminName')}</span>
                   <span className="field__control">
                     <UserRound size={16} className="field__icon" />
                     <input
                       value={name}
                       onChange={(event) => setName(event.target.value)}
-                      placeholder="例如：Yinx"
+                      placeholder={t('setup.adminNamePlaceholder')}
                       autoComplete="name"
                       required
                       maxLength={60}
@@ -233,7 +233,7 @@ export function SetupPage() {
                   </span>
                 </label>
                 <label className="field">
-                  <span className="field__label">管理员邮箱</span>
+                  <span className="field__label">{t('setup.adminEmail')}</span>
                   <span className="field__control">
                     <Mail size={16} className="field__icon" />
                     <input
@@ -248,14 +248,14 @@ export function SetupPage() {
                 </label>
                 <div className="field-row">
                   <label className="field">
-                    <span className="field__label">密码</span>
+                    <span className="field__label">{t('setup.password')}</span>
                     <span className="field__control">
                       <LockKeyhole size={16} className="field__icon" />
                       <input
                         type="password"
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
-                        placeholder="至少 8 位"
+                        placeholder={t('setup.passwordPlaceholder')}
                         autoComplete="new-password"
                         minLength={8}
                         required
@@ -263,14 +263,14 @@ export function SetupPage() {
                     </span>
                   </label>
                   <label className="field">
-                    <span className="field__label">确认密码</span>
+                    <span className="field__label">{t('setup.confirm')}</span>
                     <span className="field__control">
                       <LockKeyhole size={16} className="field__icon" />
                       <input
                         type="password"
                         value={confirm}
                         onChange={(event) => setConfirm(event.target.value)}
-                        placeholder="再输入一次"
+                        placeholder={t('setup.confirmPlaceholder')}
                         autoComplete="new-password"
                         required
                       />
@@ -283,10 +283,10 @@ export function SetupPage() {
 
               <div className="setup__actions setup__actions--split">
                 <button type="button" className="button button--ghost" onClick={() => setStep(1)}>
-                  <ArrowLeft size={16} /> 返回
+                  <ArrowLeft size={16} /> {t('setup.back')}
                 </button>
                 <button type="submit" className="button button--primary">
-                  下一步 <ArrowRight size={16} />
+                  {t('setup.next')} <ArrowRight size={16} />
                 </button>
               </div>
             </form>
@@ -298,18 +298,18 @@ export function SetupPage() {
                 <Globe2 size={22} />
               </span>
               <p className="eyebrow">STEP 3 · SYSTEM</p>
-              <h2>最后，设置你的工作台</h2>
-              <p className="setup__lead">这些是系统的初始策略，之后可以由管理员随时修改。</p>
+              <h2>{t('setup.step3Title')}</h2>
+              <p className="setup__lead">{t('setup.step3Lead')}</p>
 
               <div className="setup__form">
                 <label className="field">
-                  <span className="field__label">站点名称</span>
+                  <span className="field__label">{t('setup.siteName')}</span>
                   <span className="field__control">
                     <Globe2 size={16} className="field__icon" />
                     <input
                       value={siteName}
                       onChange={(event) => setSiteName(event.target.value)}
-                      placeholder="例如：Yinx 的邮箱"
+                      placeholder={t('setup.sitePlaceholder')}
                       maxLength={60}
                       required
                     />
@@ -318,8 +318,8 @@ export function SetupPage() {
 
                 <label className="switch-row">
                   <span className="switch-row__text">
-                    <strong>允许公开注册</strong>
-                    <small>关闭后只有管理员能创建账号；个人自托管建议保持关闭。</small>
+                    <strong>{t('setup.allowRegistration')}</strong>
+                    <small>{t('setup.allowRegistrationHint')}</small>
                   </span>
                   <input
                     type="checkbox"
@@ -331,8 +331,8 @@ export function SetupPage() {
 
                 <label className="switch-row">
                   <span className="switch-row__text">
-                    <strong>启用演示邮箱</strong>
-                    <small>在登录页显示「用演示邮箱直接体验」，方便预览界面。</small>
+                    <strong>{t('setup.demoEnabled')}</strong>
+                    <small>{t('setup.demoEnabledHint')}</small>
                   </span>
                   <input
                     type="checkbox"
@@ -344,17 +344,17 @@ export function SetupPage() {
 
                 <div className="setup__summary">
                   <div>
-                    <span>管理员</span>
-                    <strong>{name || '未填写'}</strong>
-                    <small>{email || '未填写'}</small>
+                    <span>{t('setup.summaryAdmin')}</span>
+                    <strong>{name || t('setup.notFilled')}</strong>
+                    <small>{email || t('setup.notFilled')}</small>
                   </div>
                   <div>
-                    <span>公开注册</span>
-                    <strong>{allowRegistration ? '允许' : '关闭'}</strong>
+                    <span>{t('setup.summaryRegistration')}</span>
+                    <strong>{allowRegistration ? t('setup.allowed') : t('setup.off')}</strong>
                   </div>
                   <div>
-                    <span>演示模式</span>
-                    <strong>{demoEnabled ? '开启' : '关闭'}</strong>
+                    <span>{t('setup.summaryDemo')}</span>
+                    <strong>{demoEnabled ? t('setup.on') : t('setup.off')}</strong>
                   </div>
                 </div>
               </div>
@@ -368,11 +368,11 @@ export function SetupPage() {
                   onClick={() => setStep(2)}
                   disabled={busy}
                 >
-                  <ArrowLeft size={16} /> 返回
+                  <ArrowLeft size={16} /> {t('setup.back')}
                 </button>
                 <button type="submit" className="button button--primary" disabled={busy}>
                   {busy ? <Spinner /> : <ShieldCheck size={16} />}
-                  完成初始化
+                  {t('setup.finish')}
                 </button>
               </div>
             </form>
@@ -384,26 +384,24 @@ export function SetupPage() {
                 <CheckCircle2 size={34} />
               </span>
               <p className="eyebrow">READY</p>
-              <h2>系统已就绪。</h2>
-              <p className="setup__lead">
-                {siteName} 已完成初始化。你现在以管理员身份登录，可以开始添加第一个邮箱了。
-              </p>
+              <h2>{t('setup.doneTitle')}</h2>
+              <p className="setup__lead">{t('setup.doneLead', { site: siteName })}</p>
               <div className="setup__done-grid">
                 <div>
-                  <span>站点</span>
+                  <span>{t('setup.doneSite')}</span>
                   <strong>{siteName}</strong>
                 </div>
                 <div>
-                  <span>管理员</span>
+                  <span>{t('setup.summaryAdmin')}</span>
                   <strong>{email}</strong>
                 </div>
                 <div>
-                  <span>公开注册</span>
-                  <strong>{allowRegistration ? '已开启' : '已关闭'}</strong>
+                  <span>{t('setup.summaryRegistration')}</span>
+                  <strong>{allowRegistration ? t('setup.enabled') : t('setup.disabled')}</strong>
                 </div>
                 <div>
-                  <span>演示模式</span>
-                  <strong>{demoEnabled ? '已开启' : '已关闭'}</strong>
+                  <span>{t('setup.summaryDemo')}</span>
+                  <strong>{demoEnabled ? t('setup.enabled') : t('setup.disabled')}</strong>
                 </div>
               </div>
               <div className="setup__actions">
@@ -412,7 +410,7 @@ export function SetupPage() {
                   className="button button--primary"
                   onClick={() => navigate('/app')}
                 >
-                  <Users size={16} /> 进入邮箱工作台
+                  <Users size={16} /> {t('setup.enter')}
                 </button>
               </div>
             </div>

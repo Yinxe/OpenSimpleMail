@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useI18n } from './i18n'
 
 const ICON_SELECTOR = 'link[rel="icon"]'
 const DEFAULT_ICON = '/favicon.svg'
@@ -51,6 +52,7 @@ export function useNewMailNotifications({
   siteName,
   onOpen,
 }: NewMailNotificationOptions): void {
+  const { t } = useI18n()
   const previous = useRef<number | null>(null)
   const initialized = useRef(false)
   const openRef = useRef(onOpen)
@@ -71,9 +73,9 @@ export function useNewMailNotifications({
     const delta = count - before
     try {
       const notification = new Notification(
-        delta === 1 ? '收到 1 封新邮件' : `收到 ${delta} 封新邮件`,
+        delta === 1 ? t('notify.newMailOne') : t('notify.newMail', { count: delta }),
         {
-          body: `${siteName} · 点击打开收件箱`,
+          body: t('notify.body', { site: siteName }),
           icon: DEFAULT_ICON,
           tag: 'osm-new-mail',
         },
@@ -86,5 +88,5 @@ export function useNewMailNotifications({
     } catch {
       // Some platforms only allow notifications through a service worker.
     }
-  }, [count, enabled, ready, siteName])
+  }, [count, enabled, ready, siteName, t])
 }

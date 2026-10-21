@@ -167,6 +167,14 @@ export function MailList({
   const suppressClick = useRef(0)
   const pullStart = useRef<number | null>(null)
   const pullDistanceRef = useRef(0)
+  // Touch devices have no hover to reveal the per-row checkbox, so a long
+  // press enters selection mode instead (the avatar slot becomes the checkbox).
+  const longPress = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const cancelLongPress = () => {
+    if (longPress.current) clearTimeout(longPress.current)
+    longPress.current = null
+  }
 
   return (
     <section
@@ -224,7 +232,7 @@ export function MailList({
         ) : null}
         <button
           type="button"
-          className="icon-button"
+          className="icon-button mail-list__help"
           onClick={onShowHelp}
           title={t('mail.shortcutsTitle')}
           aria-label={t('mail.shortcutsAria')}
@@ -274,11 +282,27 @@ export function MailList({
           <span className="bulk-bar__count">
             {t('mail.bulkSelected', { count: selectedOnPage.length })}
           </span>
-          <button type="button" onClick={() => onBulkRead(true)} disabled={bulkBusy}>
-            {t('mail.row.markRead')}
+          <button
+            type="button"
+            className="bulk-bar__icon"
+            onClick={() => onBulkRead(true)}
+            disabled={bulkBusy}
+            aria-label={t('mail.row.markRead')}
+            title={t('mail.row.markRead')}
+          >
+            <MailOpen size={15} />
+            <span>{t('mail.row.markRead')}</span>
           </button>
-          <button type="button" onClick={() => onBulkRead(false)} disabled={bulkBusy}>
-            {t('mail.row.markUnread')}
+          <button
+            type="button"
+            className="bulk-bar__icon"
+            onClick={() => onBulkRead(false)}
+            disabled={bulkBusy}
+            aria-label={t('mail.row.markUnread')}
+            title={t('mail.row.markUnread')}
+          >
+            <Mail size={15} />
+            <span>{t('mail.row.markUnread')}</span>
           </button>
           {canBulkArchive ? (
             <button type="button" onClick={onBulkArchive} disabled={bulkBusy}>
@@ -358,7 +382,7 @@ export function MailList({
             <AlertTriangle size={14} />
             <span>{t('mail.refreshFailed', { error })}</span>
             <button type="button" onClick={onRetry}>
-              重试
+              {t('mail.error.retry')}
             </button>
           </div>
         ) : null}
@@ -375,7 +399,7 @@ export function MailList({
               className="button button--soft button--sm empty-state__retry"
               onClick={onRetry}
             >
-              重试
+              {t('mail.error.retry')}
             </button>
           </div>
         ) : null}
@@ -416,8 +440,14 @@ export function MailList({
                   role="button"
                   tabIndex={0}
                   aria-current={selected ? 'true' : undefined}
-                  onClick={() => {
+                  onClick={(event) => {
                     if (Date.now() - suppressClick.current < 350) return
+                    // On touch, a tap while rows are selected toggles the row
+                    // instead of opening it (there is no hover for the checkbox).
+                    if (selectedOnPage.length > 0 && window.matchMedia('(hover: none)').matches) {
+                      onToggleSelect(item, event.shiftKey)
+                      return
+                    }
                     onSelect(item)
                   }}
                   onKeyDown={(event) => {
@@ -436,6 +466,14 @@ export function MailList({
                       horizontal: null,
                       swiped: false,
                     }
+                    cancelLongPress()
+                    longPress.current = setTimeout(() => {
+                      longPress.current = null
+                      const start = touchRef.current
+                      if (!start || start.key !== rowKey || start.horizontal || start.swiped) return
+                      suppressClick.current = Date.now()
+                      if (!checked) onToggleSelect(item, false)
+                    }, 480)
                   }}
                   onTouchMove={(event) => {
                     const start = touchRef.current
@@ -446,6 +484,7 @@ export function MailList({
                     if (start.horizontal === null) {
                       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
                       start.horizontal = Math.abs(dx) > Math.abs(dy) + 4
+                      cancelLongPress()
                     }
                     if (!start.horizontal) return
                     if (Math.abs(dx) > 12) start.swiped = true
@@ -454,6 +493,7 @@ export function MailList({
                     setSwipe({ key: rowKey, dx: clamped })
                   }}
                   onTouchEnd={() => {
+                    cancelLongPress()
                     const start = touchRef.current
                     touchRef.current = null
                     setSwipe(null)
@@ -469,6 +509,7 @@ export function MailList({
                     }
                   }}
                   onTouchCancel={() => {
+                    cancelLongPress()
                     touchRef.current = null
                     swipeDx.current = 0
                     setSwipe(null)
@@ -487,7 +528,8 @@ export function MailList({
                           : t('mail.row.star')}
                     </span>
                   ) : null}
-                  <span className="mail-row__check">
+                  {/* A label so the whole 40px slot toggles the checkbox on touch. */}
+                  <label className="mail-row__check" onClick={(event) => event.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={checked}
@@ -498,7 +540,7 @@ export function MailList({
                       }}
                       aria-label={checked ? t('mail.row.deselect') : t('mail.row.select')}
                     />
-                  </span>
+                  </label>
                   <span
                     className={`mail-row__status ${item.unread ? 'is-unread' : 'is-read'}`}
                     title={item.unread ? t('mail.row.unread') : t('mail.row.read')}
@@ -543,7 +585,7 @@ export function MailList({
                   <div className="mail-row__actions">
                     <button
                       type="button"
-                      className="row-action"
+                      className="row-action row-action--read"
                       title={item.unread ? t('mail.row.markRead') : t('mail.row.markUnread')}
                       aria-label={item.unread ? t('mail.row.markRead') : t('mail.row.markUnread')}
                       onClick={(event) => {
@@ -587,16 +629,14 @@ export function MailList({
 
       {total > pageSize ? (
         <footer className="mail-list__foot">
-          <span>
-            第 {page} / {pages} 页
-          </span>
+          <span>{t('mail.pageOf', { page, pages })}</span>
           <div className="pager">
             <button
               type="button"
               className="icon-button"
               disabled={page <= 1}
               onClick={() => onPage(page - 1)}
-              aria-label="上一页"
+              aria-label={t('mail.prevPage')}
             >
               <ChevronLeft size={16} />
             </button>
@@ -605,7 +645,7 @@ export function MailList({
               className="icon-button"
               disabled={page >= pages}
               onClick={() => onPage(page + 1)}
-              aria-label="下一页"
+              aria-label={t('mail.nextPage')}
             >
               <ChevronRight size={16} />
             </button>
