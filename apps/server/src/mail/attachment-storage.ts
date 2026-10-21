@@ -31,6 +31,10 @@ export class AttachmentStorage {
     return join(this.config.attachmentDir, 'cache')
   }
 
+  get cacheLimitBytes(): number {
+    return Math.max(this.config.attachmentCacheMb, 0) * 1024 * 1024
+  }
+
   /**
    * Recreates the scratch tree. Leftovers from a killed process cannot be
    * attributed to anyone, so the first caller of the process wipes them.
@@ -76,6 +80,15 @@ export class AttachmentStorage {
   async removeUploads(files: Express.Multer.File[]): Promise<void> {
     const directories = new Set(files.map((file) => dirname(file.path)))
     await Promise.all([...directories].map((directory) => this.remove(directory)))
+  }
+
+  /**
+   * Drops the whole extraction cache, including files no cache entry points at
+   * any more. Uploads in flight are untouched: they live in their own tree.
+   */
+  async clearCache(): Promise<void> {
+    await this.remove(this.cacheRoot)
+    await mkdir(this.cacheRoot, { recursive: true })
   }
 
   async remove(directory: string): Promise<void> {

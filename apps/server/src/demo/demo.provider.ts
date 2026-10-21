@@ -19,7 +19,7 @@ import type {
   OutgoingMessage,
 } from '../mail/mail.types'
 import { sanitizeEmailHtml } from '../mail/message-sanitizer'
-import { DEMO_FOLDERS, type DemoMessage } from './demo.fixtures'
+import type { DemoMessage } from './demo.fixtures'
 import type { DemoService } from './demo.service'
 
 const STARRED = 'Starred'
@@ -67,7 +67,7 @@ export class DemoProvider implements MailProvider {
 
   async listMailboxes(): Promise<MailboxDto[]> {
     const messages = this.store.messages
-    return DEMO_FOLDERS.map((folder) => {
+    return this.store.folders.map((folder) => {
       const items =
         folder.path === STARRED
           ? messages.filter((message) => isStarred(message))
@@ -241,6 +241,46 @@ export class DemoProvider implements MailProvider {
     }
     this.save()
     return { movedTo: 'Trash' }
+  }
+
+  async createMailbox(path: string): Promise<void> {
+    const trimmed = path.trim()
+    if (!trimmed) throw new Error('文件夹名不能为空')
+    if (this.store.folders.some((folder) => folder.path === trimmed)) {
+      throw new Error('文件夹已存在')
+    }
+    this.store.folders.push({
+      path: trimmed,
+      name: trimmed.split('/').pop() || trimmed,
+      specialUse: '',
+    })
+    this.save()
+  }
+
+  async renameMailbox(path: string, newPath: string): Promise<void> {
+    const trimmed = newPath.trim()
+    const folder = this.store.folders.find((item) => item.path === path)
+    if (!folder) throw new Error('文件夹不存在')
+    if (this.store.folders.some((item) => item.path === trimmed)) {
+      throw new Error('目标文件夹已存在')
+    }
+    folder.path = trimmed
+    folder.name = trimmed.split('/').pop() || trimmed
+    for (const message of this.store.messages) {
+      if (message.mailbox === path) message.mailbox = trimmed
+    }
+    this.save()
+  }
+
+  async deleteMailbox(path: string): Promise<void> {
+    this.store.folders = this.store.folders.filter((folder) => folder.path !== path)
+    this.store.messages = this.store.messages.filter((message) => message.mailbox !== path)
+    this.save()
+  }
+
+  async emptyMailbox(path: string): Promise<void> {
+    this.store.messages = this.store.messages.filter((message) => message.mailbox !== path)
+    this.save()
   }
 
   async send(message: OutgoingMessage): Promise<SendResultDto> {

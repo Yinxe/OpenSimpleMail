@@ -262,6 +262,43 @@ export class MailService {
     return this.run(() => provider.deleteMany(mailbox, uids), '无法批量删除邮件')
   }
 
+  async createMailbox(userId: string, accountId: string, path: string): Promise<void> {
+    this.assertFolderPath(path)
+    const provider = await this.provider(userId, accountId)
+    await this.run(() => provider.createMailbox(path.trim()), '无法创建文件夹')
+  }
+
+  async renameMailbox(
+    userId: string,
+    accountId: string,
+    path: string,
+    newPath: string,
+  ): Promise<void> {
+    this.assertFolderPath(path)
+    this.assertFolderPath(newPath)
+    const provider = await this.provider(userId, accountId)
+    await this.run(() => provider.renameMailbox(path.trim(), newPath.trim()), '无法重命名文件夹')
+  }
+
+  async deleteMailbox(userId: string, accountId: string, path: string): Promise<void> {
+    this.assertFolderPath(path)
+    const provider = await this.provider(userId, accountId)
+    await this.run(() => provider.deleteMailbox(path.trim()), '无法删除文件夹')
+  }
+
+  async emptyMailbox(userId: string, accountId: string, path: string): Promise<void> {
+    this.assertFolderPath(path)
+    const provider = await this.provider(userId, accountId)
+    await this.run(() => provider.emptyMailbox(path.trim()), '无法清空文件夹')
+  }
+
+  private assertFolderPath(path: string): void {
+    if (!path.trim()) throw new BadRequestException('文件夹名称不能为空')
+    if (path.trim().toUpperCase() === 'INBOX') {
+      throw new BadRequestException('收件箱不支持该操作')
+    }
+  }
+
   async send(
     userId: string,
     accountId: string,

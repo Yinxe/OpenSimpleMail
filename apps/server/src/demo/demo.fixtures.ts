@@ -31,6 +31,7 @@ export interface DemoMessage {
 export interface DemoStore {
   nextUid: number
   messages: DemoMessage[]
+  folders: DemoFolder[]
 }
 
 export interface DemoFolder {
@@ -748,5 +749,6 @@ export function createDemoStore(now = new Date()): DemoStore {
   return {
     nextUid: Math.max(...messages.map((item) => item.uid)) + 1,
     messages,
+    folders: DEMO_FOLDERS.map((folder) => ({ ...folder })),
   }
 }

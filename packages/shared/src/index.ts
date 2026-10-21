@@ -31,6 +31,18 @@ export interface SystemSettingsDto {
   demoEnabled: boolean
 }
 
+/** Disk-backed attachment cache, as reported to administrators. */
+export interface AttachmentCacheStatsDto {
+  /** Messages whose attachments are currently extracted on disk. */
+  entries: number
+  /** Approximate heap footprint of the cached message bodies. */
+  memoryBytes: number
+  /** Bytes of extracted attachments on disk. */
+  diskBytes: number
+  /** Configured upper bound for `diskBytes`. */
+  limitBytes: number
+}
+
 export type DefaultView = 'account' | 'unified'
 export type ListDensity = 'comfortable' | 'compact'
 

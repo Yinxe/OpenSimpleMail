@@ -1,11 +1,13 @@
 import { type AccountDto, type MailboxDto, STARRED_MAILBOX, type UserDto } from '@osm/shared'
 import {
   Archive,
+  Eraser,
   FileText,
   Folder,
   Inbox,
   LogOut,
   MailPlus,
+  Pencil,
   PenLine,
   Plus,
   Send,
@@ -29,6 +31,10 @@ interface SidebarProps {
   onSelectAccount: (accountId: string | null) => void
   onSelectMailbox: (path: string) => void
   onSelectStarred: () => void
+  onCreateFolder: () => void
+  onRenameFolder: (folder: MailboxDto) => void
+  onDeleteFolder: (folder: MailboxDto) => void
+  onEmptyFolder: (folder: MailboxDto) => void
   onCompose: () => void
   onAddAccount: () => void
   onSettings: () => void
@@ -103,6 +109,10 @@ export function Sidebar({
   onSelectAccount,
   onSelectMailbox,
   onSelectStarred,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onEmptyFolder,
   onCompose,
   onAddAccount,
   onSettings,
@@ -202,23 +212,69 @@ export function Sidebar({
       <div className="sidebar__section sidebar__section--folders">
         <div className="sidebar__section-head">
           <span>文件夹</span>
+          {activeAccountId ? (
+            <button
+              type="button"
+              className="sidebar__add"
+              onClick={onCreateFolder}
+              title="新建文件夹"
+              aria-label="新建文件夹"
+            >
+              <Plus size={14} />
+            </button>
+          ) : null}
         </div>
         {activeAccountId ? (
           <div className="folder-list">
-            {sortedMailboxes.map((folder) => (
-              <button
-                key={folder.path}
-                type="button"
-                className={`folder-item ${activeMailbox === folder.path ? 'is-active' : ''}`}
-                onClick={() => onSelectMailbox(folder.path)}
-              >
-                <FolderIcon folder={folder} />
-                <span className="folder-item__label">{folderLabel(folder)}</span>
-                {folder.unread > 0 ? (
-                  <span className="folder-item__count">{folder.unread}</span>
-                ) : null}
-              </button>
-            ))}
+            {sortedMailboxes.map((folder) => {
+              const custom = !folder.specialUse
+              return (
+                <div className="folder-row" key={folder.path}>
+                  <button
+                    type="button"
+                    className={`folder-item ${activeMailbox === folder.path ? 'is-active' : ''}`}
+                    onClick={() => onSelectMailbox(folder.path)}
+                  >
+                    <FolderIcon folder={folder} />
+                    <span className="folder-item__label">{folderLabel(folder)}</span>
+                    {folder.unread > 0 ? (
+                      <span className="folder-item__count">{folder.unread}</span>
+                    ) : null}
+                  </button>
+                  {custom ? (
+                    <span className="folder-row__actions">
+                      <button
+                        type="button"
+                        onClick={() => onRenameFolder(folder)}
+                        title="重命名文件夹"
+                        aria-label={`重命名 ${folderLabel(folder)}`}
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteFolder(folder)}
+                        title="删除文件夹"
+                        aria-label={`删除 ${folderLabel(folder)}`}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </span>
+                  ) : folder.specialUse === '\\Trash' ? (
+                    <span className="folder-row__actions">
+                      <button
+                        type="button"
+                        onClick={() => onEmptyFolder(folder)}
+                        title="清空废纸篓"
+                        aria-label="清空废纸篓"
+                      >
+                        <Eraser size={13} />
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
+              )
+            })}
             {sortedMailboxes.length === 0 ? <p className="sidebar__hint">正在读取文件夹…</p> : null}
           </div>
         ) : (

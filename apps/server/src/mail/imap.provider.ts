@@ -456,12 +456,11 @@ export class ImapProvider implements MailProvider {
       if (!download.content) throw new NotFoundException('邮件不存在或已被删除')
 
       try {
-        const parsed = await parseMessageStream(download.content, {
+        // `load` stores the result itself, unless the cache was purged meanwhile.
+        return await parseMessageStream(download.content, {
           dir: directory,
           maxBytes: MAX_MESSAGE_BYTES,
         })
-        this.cache.set(cacheKey, parsed)
-        return parsed
       } catch (error) {
         await this.storage.remove(directory)
         if (error instanceof MessageTooLargeError) {
@@ -615,6 +614,46 @@ export class ImapProvider implements MailProvider {
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
     return result
+  }
+
+  async createMailbox(path: string): Promise<void> {
+    await this.pool.withClient(this.creds, async (client) => {
+      await client.mailboxCreate(path)
+    })
+    dropMailboxCache(this.creds.accountId)
+  }
+
+  async renameMailbox(path: string, newPath: string): Promise<void> {
+    await this.pool.withClient(this.creds, async (client) => {
+      await client.mailboxRename(path, newPath)
+    })
+    dropMailboxCache(this.creds.accountId)
+    dropStarredCache(this.creds.accountId)
+  }
+
+  async deleteMailbox(path: string): Promise<void> {
+    await this.pool.withClient(this.creds, async (client) => {
+      await client.mailboxDelete(path)
+    })
+    dropMailboxCache(this.creds.accountId)
+    dropStarredCache(this.creds.accountId)
+  }
+
+  async emptyMailbox(path: string): Promise<void> {
+    await this.pool.withClient(this.creds, async (client) => {
+      const lock = await client.getMailboxLock(path)
+      try {
+        if (client.mailbox && client.mailbox.exists > 0) {
+          await client.messageDelete('1:*')
+          // CLOSE expunges the messages that were just flagged as deleted.
+          await client.mailboxClose()
+        }
+      } finally {
+        lock.release()
+      }
+    })
+    dropMailboxCache(this.creds.accountId)
+    dropStarredCache(this.creds.accountId)
   }
 
   async send(message: OutgoingMessage): Promise<SendResultDto> {

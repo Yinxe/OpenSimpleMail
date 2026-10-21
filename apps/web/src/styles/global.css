@@ -1198,6 +1198,48 @@ code {
   color: var(--sidebar-muted);
 }
 
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.folder-row .folder-item {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.folder-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.folder-row:hover .folder-row__actions,
+.folder-row:focus-within .folder-row__actions {
+  opacity: 1;
+}
+.folder-row__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sidebar-muted);
+}
+.folder-row__actions button:hover {
+  background: var(--sidebar-hover);
+  color: var(--sidebar-ink);
+}
+@media (hover: none) {
+  .folder-row__actions {
+    opacity: 1;
+  }
+}
+
 .sidebar__hint {
   padding: 4px 10px;
   color: #7f7769;

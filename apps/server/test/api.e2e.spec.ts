@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import type {
   AccountDto,
+  AttachmentCacheStatsDto,
   ContactDto,
   MailboxDto,
   MessagePageDto,
@@ -224,6 +225,32 @@ describe('first-run setup', () => {
       method: 'PATCH',
       body: JSON.stringify({ allowRegistration: false }),
     })
+    expect(forbidden.status).toBe(403)
+  })
+
+  it('reports and clears the attachment cache', async () => {
+    const stats = await admin.json<AttachmentCacheStatsDto>('/admin/attachments')
+    expect(stats.status).toBe(200)
+    expect(stats.body.limitBytes).toBeGreaterThan(0)
+    expect(stats.body.diskBytes).toBeGreaterThanOrEqual(0)
+
+    const cleared = await admin.json<AttachmentCacheStatsDto>('/admin/attachments', {
+      method: 'DELETE',
+    })
+    expect(cleared.status).toBe(200)
+    expect(cleared.body).toMatchObject({ entries: 0, memoryBytes: 0, diskBytes: 0 })
+
+    const member = new ApiClient()
+    const registered = await member.json<AuthResponse>('/auth/register', {
+      ...post({
+        name: 'Cache Member',
+        email: `cache-member-${Date.now()}@example.com`,
+        password: 'a-strong-password',
+      }),
+    })
+    expect(registered.status).toBe(201)
+
+    const forbidden = await member.json('/admin/attachments', { method: 'DELETE' })
     expect(forbidden.status).toBe(403)
   })
 
@@ -453,6 +480,47 @@ describe('demo mailbox', () => {
     expect(page.status).toBe(200)
     expect(page.body.messages).toHaveLength(5)
     expect(page.body.total).toBeGreaterThan(5)
+  })
+
+  it('creates, renames and deletes a folder', async () => {
+    const created = await client.json(
+      `/accounts/${account.id}/mailboxes`,
+      post({ mailbox: 'Projects' }),
+    )
+    expect(created.status).toBe(201)
+
+    const afterCreate = await client.json<MailboxDto[]>(`/accounts/${account.id}/mailboxes`)
+    expect(afterCreate.body.some((item) => item.path === 'Projects')).toBe(true)
+
+    const renamed = await client.json(`/accounts/${account.id}/mailboxes`, {
+      method: 'PATCH',
+      body: JSON.stringify({ path: 'Projects', newPath: 'Projects 2026' }),
+    })
+    expect(renamed.status).toBe(204)
+
+    const afterRename = await client.json<MailboxDto[]>(`/accounts/${account.id}/mailboxes`)
+    expect(afterRename.body.some((item) => item.path === 'Projects 2026')).toBe(true)
+    expect(afterRename.body.some((item) => item.path === 'Projects')).toBe(false)
+
+    const deleted = await client.json(
+      `/accounts/${account.id}/mailboxes?mailbox=${encodeURIComponent('Projects 2026')}`,
+      { method: 'DELETE' },
+    )
+    expect(deleted.status).toBe(204)
+
+    const afterDelete = await client.json<MailboxDto[]>(`/accounts/${account.id}/mailboxes`)
+    expect(afterDelete.body.some((item) => item.path === 'Projects 2026')).toBe(false)
+  })
+
+  it('empties a folder', async () => {
+    const emptied = await client.json(
+      `/accounts/${account.id}/mailboxes/empty`,
+      post({ mailbox: 'Trash' }),
+    )
+    expect(emptied.status).toBe(204)
+
+    const folders = await client.json<MailboxDto[]>(`/accounts/${account.id}/mailboxes`)
+    expect(folders.body.find((item) => item.path === 'Trash')?.total).toBe(0)
   })
 
   it('paginates the unified inbox', async () => {

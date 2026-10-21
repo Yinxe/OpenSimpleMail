@@ -14,6 +14,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 - Administrator role with a public-registration switch; disabling it hides the sign-up UI and rejects the API server-side
 - Per-user preferences stored server-side: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
+- Folder management from the sidebar: create, rename and delete custom folders, or empty the trash; special folders are not deletable
 - Unified inbox across all accounts with real pagination, plus a per-account folder tree
 - Pagination, search, message previews, explicit read/unread markers with per-row toggles and one-click "mark all read", batch selection with bulk read/archive/delete, star and delete (moves to the server trash when available)
 - Three reader views: full HTML, simplified text (images and styling removed, links kept) and verification code; the choice is remembered per browser
@@ -68,7 +69,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Mail data and accounts live in the `open-simple-mail-data` volume. Attachments stay inside it too: outgoing uploads and extracted attachments are written to `data/attachments/` and removed once they are no longer needed, so no extra volume is required.
+Mail data and accounts live in the `open-simple-mail-data` volume. Attachments stay inside it too: outgoing uploads and extracted attachments are written to `data/attachments/` and removed once they are no longer needed, so no extra volume is required. Administrators can watch the usage and clear it from Settings → Attachment cache.
 
 ## First-run setup and roles
 

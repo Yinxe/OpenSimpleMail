@@ -24,6 +24,9 @@ export class ParsedMessageCache {
   // Two requests for the same message would otherwise extract their
   // attachments into the same directory at the same time.
   private readonly pending = new Map<string, Promise<ParsedMessage>>()
+  // Bumped by clear(): a parse that started before the purge must not put its
+  // entry back, its directory is gone.
+  private generation = 0
   private memoryBytes = 0
   private diskBytes = 0
 
@@ -53,7 +56,14 @@ export class ParsedMessageCache {
     const inflight = this.pending.get(key)
     if (inflight) return inflight
 
-    const promise = loader().finally(() => this.pending.delete(key))
+    const generation = this.generation
+    const promise = loader()
+      .then((message) => {
+        if (generation === this.generation) this.set(key, message)
+        else void this.removeDir(message.dir)
+        return message
+      })
+      .finally(() => this.pending.delete(key))
     this.pending.set(key, promise)
     return promise
   }
@@ -65,7 +75,7 @@ export class ParsedMessageCache {
     this.drop(key)
     // One message larger than the whole budget is served once and not cached.
     if (diskBytes > this.maxDiskBytes) {
-      this.removeDir(message.dir)
+      void this.removeDir(message.dir)
       return
     }
 
@@ -84,6 +94,29 @@ export class ParsedMessageCache {
     this.diskBytes += diskBytes
   }
 
+  /** Drops entries that have outlived the TTL and reports what is left. */
+  stats(): { entries: number; memoryBytes: number; diskBytes: number } {
+    const now = Date.now()
+    for (const [key, entry] of [...this.entries]) {
+      if (now - entry.storedAt > TTL_MS) this.drop(key)
+    }
+    return {
+      entries: this.entries.size,
+      memoryBytes: this.memoryBytes,
+      diskBytes: this.diskBytes,
+    }
+  }
+
+  /** Forgets every entry and removes the extracted files it owns. */
+  async clear(): Promise<void> {
+    const directories = [...this.entries.values()].map((entry) => entry.message.dir)
+    this.generation += 1
+    this.entries.clear()
+    this.memoryBytes = 0
+    this.diskBytes = 0
+    await Promise.all(directories.map((directory) => this.removeDir(directory)))
+  }
+
   drop(key: string): void {
     this.pending.delete(key)
     const entry = this.entries.get(key)
@@ -91,10 +124,10 @@ export class ParsedMessageCache {
     this.entries.delete(key)
     this.memoryBytes = Math.max(0, this.memoryBytes - entry.memoryBytes)
     this.diskBytes = Math.max(0, this.diskBytes - entry.diskBytes)
-    this.removeDir(entry.message.dir)
+    void this.removeDir(entry.message.dir)
   }
 
-  private removeDir(directory: string): void {
-    void rm(directory, { recursive: true, force: true }).catch(() => undefined)
+  private async removeDir(directory: string): Promise<void> {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined)
   }
 }

@@ -1,5 +1,6 @@
 import {
   type AccountDto,
+  type AttachmentCacheStatsDto,
   DEFAULT_PREFERENCES,
   type SystemSettingsDto,
   type TestResultDto,
@@ -12,6 +13,7 @@ import {
   BadgeCheck,
   Check,
   FlaskConical,
+  HardDrive,
   LogOut,
   Monitor,
   Moon,
@@ -28,11 +30,13 @@ import { useNavigate } from 'react-router-dom'
 import { AccountDialog } from '@/components/AccountDialog'
 import { Avatar } from '@/components/Avatar'
 import { Logo } from '@/components/Logo'
+import { Modal } from '@/components/Modal'
 import { Spinner } from '@/components/Spinner'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { isDeleteConfirmSkipped, setDeleteConfirmSkipped } from '@/lib/deleteGuard'
+import { formatBytes } from '@/lib/format'
 import { type ThemeChoice, useTheme } from '@/lib/theme'
 import { useToast } from '@/lib/toast'
 
@@ -65,6 +69,7 @@ export function SettingsPage() {
   const [prefForm, setPrefForm] = useState<UserPreferencesDto>(preferences)
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
+  const [clearCacheOpen, setClearCacheOpen] = useState(false)
 
   useEffect(() => {
     setSkipDeleteConfirm(isDeleteConfirmSkipped(user?.id))
@@ -108,6 +113,22 @@ export function SettingsPage() {
       toast.success('系统设置已保存')
     },
     onError: (error) => toast.error('保存系统设置失败', errorMessage(error)),
+  })
+
+  const attachmentCache = useQuery({
+    queryKey: ['admin-attachments'],
+    queryFn: () => api.get<AttachmentCacheStatsDto>('/admin/attachments'),
+    enabled: Boolean(user?.isAdmin),
+  })
+
+  const clearCacheMutation = useMutation({
+    mutationFn: () => api.delete<AttachmentCacheStatsDto>('/admin/attachments'),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['admin-attachments'], data)
+      setClearCacheOpen(false)
+      toast.success('附件缓存已清理')
+    },
+    onError: (error) => toast.error('清理附件缓存失败', errorMessage(error)),
   })
 
   useEffect(() => {
@@ -419,6 +440,53 @@ export function SettingsPage() {
           </section>
         ) : null}
 
+        {user.isAdmin ? (
+          <section className="settings-card">
+            <div className="settings-card__head">
+              <div>
+                <h2>附件缓存</h2>
+                <p>
+                  收信时解析出的附件会暂存在服务器磁盘上，同一封邮件的多个附件因此不必重复下载。
+                </p>
+              </div>
+              <span className="badge">
+                <HardDrive size={13} /> {formatBytes(attachmentCache.data?.diskBytes ?? 0)}
+              </span>
+            </div>
+
+            <div className="admin-settings">
+              <div className="switch-row">
+                <span className="switch-row__text">
+                  <strong>
+                    {attachmentCache.isLoading
+                      ? '正在读取…'
+                      : `${attachmentCache.data?.entries ?? 0} 封邮件的附件在缓存中`}
+                  </strong>
+                  <small>
+                    磁盘 {formatBytes(attachmentCache.data?.diskBytes ?? 0)} / 上限{' '}
+                    {formatBytes(attachmentCache.data?.limitBytes ?? 0)}，正文常驻内存{' '}
+                    {formatBytes(attachmentCache.data?.memoryBytes ?? 0)}。闲置 10
+                    分钟或超出上限后会自动淘汰。
+                  </small>
+                </span>
+              </div>
+
+              <div className="admin-settings__foot">
+                <span>清理只删除缓存，不会影响服务器上的邮件和附件本身。</span>
+                <button
+                  type="button"
+                  className="button button--ghost button--sm"
+                  onClick={() => setClearCacheOpen(true)}
+                  disabled={clearCacheMutation.isPending}
+                >
+                  {clearCacheMutation.isPending ? <Spinner /> : <Trash2 size={14} />}
+                  清理缓存
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         <section className="settings-card">
           <div className="settings-card__head">
             <div>
@@ -674,6 +742,40 @@ export function SettingsPage() {
           queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
         }}
       />
+
+      <Modal
+        open={clearCacheOpen}
+        title="清理附件缓存？"
+        subtitle={`将释放约 ${formatBytes(attachmentCache.data?.diskBytes ?? 0)} 磁盘空间`}
+        onClose={() => {
+          if (!clearCacheMutation.isPending) setClearCacheOpen(false)
+        }}
+        footer={
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => setClearCacheOpen(false)}
+              disabled={clearCacheMutation.isPending}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="button button--danger"
+              onClick={() => clearCacheMutation.mutate()}
+              disabled={clearCacheMutation.isPending}
+            >
+              {clearCacheMutation.isPending ? <Spinner /> : <Trash2 size={15} />}
+              清理缓存
+            </button>
+          </div>
+        }
+      >
+        <p className="delete-note">
+          缓存中的附件会在下次打开邮件或下载时重新从邮件服务器读取；邮件、附件本身和已发送的邮件都不受影响。
+        </p>
+      </Modal>
     </div>
   )
 }

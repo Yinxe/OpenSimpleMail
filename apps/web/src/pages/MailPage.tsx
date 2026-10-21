@@ -20,6 +20,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AccountDialog } from '@/components/AccountDialog'
 import { Composer } from '@/components/Composer'
 import { DeleteMessageDialog } from '@/components/DeleteMessageDialog'
+import { FolderDialog } from '@/components/FolderDialog'
 import { Logo } from '@/components/Logo'
 import { MailList, type MailListItem, mailRowKey } from '@/components/MailList'
 import { MessageReader } from '@/components/MessageReader'
@@ -148,6 +149,11 @@ export function MailPage() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const selectionAnchor = useRef<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [folderDialog, setFolderDialog] = useState<{
+    mode: 'create' | 'rename'
+    folder?: MailboxDto
+  } | null>(null)
+  const [folderBusy, setFolderBusy] = useState(false)
   const goPrefix = useRef<number | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DeleteTarget | null>(null)
   const [keepDeleteConfirm, setKeepDeleteConfirm] = useState(true)
@@ -573,6 +579,77 @@ export function MailPage() {
       page: null,
       q: null,
     })
+  }
+
+  function openCreateFolder() {
+    if (!activeAccount) return
+    setFolderDialog({ mode: 'create' })
+  }
+
+  function openRenameFolder(folder: MailboxDto) {
+    setFolderDialog({ mode: 'rename', folder })
+  }
+
+  async function submitFolder(path: string) {
+    if (!activeAccount || !folderDialog) return
+    setFolderBusy(true)
+    try {
+      if (folderDialog.mode === 'create') {
+        await api.post(`/accounts/${activeAccount.id}/mailboxes`, { mailbox: path })
+        toast.success('文件夹已创建', path)
+      } else if (folderDialog.folder) {
+        await api.patch(`/accounts/${activeAccount.id}/mailboxes`, {
+          path: folderDialog.folder.path,
+          newPath: path,
+        })
+        toast.success('文件夹已重命名', path)
+      }
+      queryClient.invalidateQueries({ queryKey: ['mailboxes', activeAccount.id] })
+      setFolderDialog(null)
+    } catch (error) {
+      toast.error('文件夹操作失败', errorMessage(error))
+    } finally {
+      setFolderBusy(false)
+    }
+  }
+
+  async function deleteFolder(folder: MailboxDto) {
+    if (!activeAccount) return
+    if (!window.confirm(`删除文件夹「${folderLabel(folder)}」及其中所有邮件？`)) return
+    setFolderBusy(true)
+    try {
+      await api.delete(
+        `/accounts/${activeAccount.id}/mailboxes?mailbox=${encodeURIComponent(folder.path)}`,
+      )
+      queryClient.invalidateQueries({ queryKey: ['mailboxes', activeAccount.id] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      if (mailboxParam === folder.path) {
+        update({ mailbox: DEFAULT_MAILBOX, uid: null, page: null })
+      }
+      toast.success('文件夹已删除', folderLabel(folder))
+    } catch (error) {
+      toast.error('删除文件夹失败', errorMessage(error))
+    } finally {
+      setFolderBusy(false)
+    }
+  }
+
+  async function emptyFolder(folder: MailboxDto) {
+    if (!activeAccount) return
+    if (!window.confirm(`清空「${folderLabel(folder)}」？此操作不可撤销。`)) return
+    setFolderBusy(true)
+    try {
+      await api.post(`/accounts/${activeAccount.id}/mailboxes/empty`, {
+        mailbox: folder.path,
+      })
+      queryClient.invalidateQueries({ queryKey: ['mailboxes', activeAccount.id] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      toast.success('文件夹已清空', folderLabel(folder))
+    } catch (error) {
+      toast.error('清空文件夹失败', errorMessage(error))
+    } finally {
+      setFolderBusy(false)
+    }
   }
 
   function mailboxOf(item: MailListItem): string {
@@ -1048,6 +1125,10 @@ export function MailPage() {
         onSelectAccount={selectAccount}
         onSelectMailbox={selectMailbox}
         onSelectStarred={selectStarred}
+        onCreateFolder={openCreateFolder}
+        onRenameFolder={openRenameFolder}
+        onDeleteFolder={(folder) => void deleteFolder(folder)}
+        onEmptyFolder={(folder) => void emptyFolder(folder)}
         onCompose={() => {
           if (accounts.length === 0) setAddOpen(true)
           else openCompose('new')
@@ -1232,6 +1313,15 @@ export function MailPage() {
           }}
         />
       ) : null}
+
+      <FolderDialog
+        open={Boolean(folderDialog)}
+        mode={folderDialog?.mode ?? 'create'}
+        initialPath={folderDialog?.mode === 'rename' ? folderDialog.folder?.path : ''}
+        busy={folderBusy}
+        onClose={() => setFolderDialog(null)}
+        onSubmit={(path) => void submitFolder(path)}
+      />
 
       <AccountDialog
         open={addOpen}

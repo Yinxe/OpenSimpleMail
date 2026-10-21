@@ -6,6 +6,7 @@ import {
   createDemoStore,
   DEMO_ACCOUNT_EMAIL,
   DEMO_ACCOUNT_NAME,
+  DEMO_FOLDERS,
   type DemoStore,
 } from './demo.fixtures'
 import { DemoProvider } from './demo.provider'
@@ -69,6 +70,10 @@ export class DemoService {
       .prepare('SELECT payload FROM demo_state WHERE user_id = ?')
       .get(userId) as { payload: string } | undefined
     const store = row ? (JSON.parse(row.payload) as DemoStore) : createDemoStore()
+    // Stores created before folder management shipped do not have this field.
+    if (!Array.isArray(store.folders)) {
+      store.folders = DEMO_FOLDERS.map((folder) => ({ ...folder }))
+    }
     this.stores.set(userId, store)
     return store
   }

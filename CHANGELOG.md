@@ -4,6 +4,10 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ## [Unreleased]
 
+### Added
+
+- Administrator "attachment cache" panel under Settings: it shows how many messages are extracted, the disk usage against the configured budget, and a confirmed "clear cache" action (`GET` / `DELETE /api/admin/attachments`) that drops every extracted attachment without touching mail on the server. Parses already in flight are not written back into the cleared cache.
+
 ### Changed
 
 - Stream attachments through disk instead of the heap: outgoing uploads are written to `data/attachments/upload/` and read back by the MIME composer, while incoming messages are parsed from the IMAP stream with each attachment extracted to `data/attachments/cache/`. A 25 MB send or a 40 MB message no longer holds tens of megabytes in memory.
@@ -26,6 +30,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Folder management from the sidebar: create, rename and delete custom folders, and empty the trash; backed by IMAP `CREATE`/`RENAME`/`DELETE`/`CLOSE` and the demo store.
 - Message-list previews for real IMAP accounts: the list fetch now includes the first 4 KB of each message, and a lightweight parser extracts the first text part (quoted-printable, base64, multipart or HTML) into a 180-character summary.
 - Unified inbox pagination: `/api/messages/unified` merges each account's INBOX (or starred view) page by page, returns a true total and makes the pager work in the unified view.
 - Touch gestures on the message list: swipe left to archive (or delete when no archive folder exists), swipe right to toggle the star, and pull down at the top to refresh.

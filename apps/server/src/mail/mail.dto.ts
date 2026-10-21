@@ -69,6 +69,16 @@ export class MailboxQueryDto {
   mailbox!: string
 }
 
+export class RenameMailboxDto {
+  @IsString()
+  @Length(1, 512)
+  path!: string
+
+  @IsString()
+  @Length(1, 512)
+  newPath!: string
+}
+
 export class FlagUpdateDto {
   @IsOptional()
   @IsBoolean()

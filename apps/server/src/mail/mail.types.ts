@@ -75,6 +75,10 @@ export interface MailProvider {
   moveMany(mailbox: string, uids: number[], destination: string): Promise<void>
   delete(mailbox: string, uid: number): Promise<DeleteResult>
   deleteMany(mailbox: string, uids: number[]): Promise<DeleteResult>
+  createMailbox(path: string): Promise<void>
+  renameMailbox(path: string, newPath: string): Promise<void>
+  deleteMailbox(path: string): Promise<void>
+  emptyMailbox(path: string): Promise<void>
   send(message: OutgoingMessage): Promise<SendResultDto>
   test(): Promise<TestResultDto>
 }

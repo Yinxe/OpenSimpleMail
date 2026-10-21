@@ -8,6 +8,7 @@ import {
   HttpCode,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
   Res,
@@ -28,6 +29,7 @@ import {
   ListMessagesQueryDto,
   MailboxQueryDto,
   MoveMessageDto,
+  RenameMailboxDto,
   SendMessageDto,
 } from './mail.dto'
 import { MailService } from './mail.service'
@@ -58,6 +60,46 @@ export class MailController {
     @Param('accountId') accountId: string,
   ): Promise<MailboxDto[]> {
     return this.mail.listMailboxes(userId, accountId)
+  }
+
+  @Post('mailboxes')
+  @HttpCode(201)
+  async createMailbox(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Body() body: MailboxQueryDto,
+  ): Promise<void> {
+    await this.mail.createMailbox(userId, accountId, body.mailbox)
+  }
+
+  @Patch('mailboxes')
+  @HttpCode(204)
+  async renameMailbox(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Body() body: RenameMailboxDto,
+  ): Promise<void> {
+    await this.mail.renameMailbox(userId, accountId, body.path, body.newPath)
+  }
+
+  @Delete('mailboxes')
+  @HttpCode(204)
+  async deleteMailbox(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Query() query: MailboxQueryDto,
+  ): Promise<void> {
+    await this.mail.deleteMailbox(userId, accountId, query.mailbox)
+  }
+
+  @Post('mailboxes/empty')
+  @HttpCode(204)
+  async emptyMailbox(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Body() body: MailboxQueryDto,
+  ): Promise<void> {
+    await this.mail.emptyMailbox(userId, accountId, body.mailbox)
   }
 
   @Get('messages')
