@@ -4,6 +4,12 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ## [Unreleased]
 
+### Fixed
+
+- Listen for `ImapFlow` connection-level `error` events, so an idle socket timeout or dropped IMAP connection no longer terminates the Node process.
+- Retry a failed IMAP operation once on a fresh connection, and use portable `LIST` + `STATUS` folder counting for providers such as QQ Mail that close the connection on `LIST-STATUS`.
+- Raise the IMAP socket timeout above the pool idle-close interval to avoid tearing down healthy idle connections.
+
 ### Added
 
 - First-run setup wizard: creates the initial administrator and stores site name, public-registration and demo-mode policy.

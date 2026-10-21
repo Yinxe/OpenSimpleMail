@@ -25,7 +25,9 @@ function createClient(creds: MailCredentials, verifyOnly = false): ImapFlow {
     verifyOnly,
     connectionTimeout: 20_000,
     greetingTimeout: 12_000,
-    socketTimeout: 90_000,
+    // Keep the socket alive longer than the 5-minute pool idle close; a shorter
+    // timeout would tear down healthy idle connections (and used to crash Node).
+    socketTimeout: 10 * 60 * 1000,
     tls: { servername: creds.imap.host },
   })
 }
@@ -40,34 +42,47 @@ export class ImapPool implements OnModuleDestroy {
   private readonly entries = new Map<string, PoolEntry>()
 
   async withClient<T>(creds: MailCredentials, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-    const entry = this.getEntry(creds)
-    entry.pending += 1
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const entry = this.getEntry(creds)
+      entry.pending += 1
 
-    const run = entry.queue.then(async () => {
-      await entry.ready
-      entry.lastUsed = Date.now()
-      return fn(entry.client)
-    })
-    entry.queue = run.then(
-      () => undefined,
-      () => undefined,
-    )
+      const run = entry.queue.then(async () => {
+        await entry.ready
+        entry.lastUsed = Date.now()
+        return fn(entry.client)
+      })
+      entry.queue = run.then(
+        () => undefined,
+        () => undefined,
+      )
 
-    try {
-      return await run
-    } catch (error) {
-      if (!entry.client.usable) this.drop(creds.accountId, entry)
-      throw error
-    } finally {
-      entry.pending -= 1
-      entry.lastUsed = Date.now()
-      this.scheduleIdleClose(creds.accountId, entry)
+      try {
+        return await run
+      } catch (error) {
+        const connectionLost = !entry.client.usable
+        if (connectionLost) this.drop(creds.accountId, entry)
+        if (connectionLost && attempt === 0) {
+          this.logger.debug(`Retrying IMAP operation for ${creds.email} after connection loss`)
+          continue
+        }
+        throw error
+      } finally {
+        entry.pending -= 1
+        entry.lastUsed = Date.now()
+        this.scheduleIdleClose(creds.accountId, entry)
+      }
     }
+    throw new Error('IMAP operation failed after reconnecting')
   }
 
   /** Opens a throwaway connection, which keeps credential checks out of the pool. */
   async verify(creds: MailCredentials): Promise<void> {
     const client = createClient(creds, true)
+    // ImapFlow emits connection-level errors on the instance. Without a listener
+    // Node would treat it as an unhandled 'error' event and terminate the process.
+    client.on('error', (error: Error) => {
+      this.logger.debug(`IMAP verification error for ${creds.email}: ${error.message}`)
+    })
     try {
       await client.connect()
     } finally {
@@ -94,18 +109,35 @@ export class ImapPool implements OnModuleDestroy {
     const client = createClient(creds)
     const entry: PoolEntry = {
       client,
-      ready: client.connect(),
+      ready: Promise.resolve(),
       queue: Promise.resolve(),
       pending: 0,
       lastUsed: Date.now(),
     }
+
+    // A dropped socket or an idle timeout is normal for IMAP. Log it, dispose the
+    // pooled connection and let the next request reconnect; never let it become an
+    // unhandled EventEmitter error that crashes the whole server.
+    client.on('error', (error: Error) => {
+      if (this.entries.get(creds.accountId) !== entry) return
+      this.logger.warn(`IMAP connection for ${creds.email} failed: ${error.message}`)
+      this.drop(creds.accountId, entry)
+    })
+    client.on('close', () => {
+      if (this.entries.get(creds.accountId) !== entry) return
+      if (entry.idleTimer) clearTimeout(entry.idleTimer)
+      this.entries.delete(creds.accountId)
+    })
+
+    this.entries.set(creds.accountId, entry)
+    entry.ready = client.connect()
     // Avoid unhandled rejections: consumers await `ready` through the queue.
     entry.ready.catch(() => undefined)
-    this.entries.set(creds.accountId, entry)
     return entry
   }
 
   private scheduleIdleClose(accountId: string, entry: PoolEntry): void {
+    if (this.entries.get(accountId) !== entry) return
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
     entry.idleTimer = setTimeout(() => {
       if (entry.pending > 0) return
@@ -118,6 +150,7 @@ export class ImapPool implements OnModuleDestroy {
   private drop(accountId: string, entry: PoolEntry): void {
     if (this.entries.get(accountId) === entry) this.entries.delete(accountId)
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
+    if (entry.client.isClosed) return
     entry.client.logout().catch((error: unknown) => {
       this.logger.debug(`Closing IMAP connection for ${accountId} failed: ${String(error)}`)
     })

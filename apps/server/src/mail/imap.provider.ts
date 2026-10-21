@@ -92,28 +92,22 @@ export class ImapProvider implements MailProvider {
 
   async listMailboxes(): Promise<MailboxDto[]> {
     return this.pool.withClient(this.creds, async (client) => {
-      let list: Awaited<ReturnType<typeof client.list>>
-      try {
-        list = await client.list({ statusQuery: { messages: true, unseen: true } })
-      } catch {
-        // Older servers reject STATUS in LIST; fall back to plain LIST + STATUS below.
-        list = await client.list()
-      }
+      // Plain LIST + per-folder STATUS is more portable than LIST-STATUS. Some
+      // providers (notably QQ Mail) close the connection on the extended form.
+      const list = await client.list()
       const result: MailboxDto[] = []
       for (const item of list) {
         if (!item.listed || item.flags.has('\\Noselect')) continue
-        let total = item.status?.messages ?? 0
-        let unread = item.status?.unseen ?? 0
-        if (!item.status) {
-          try {
-            const status = await client.status(item.path, { messages: true, unseen: true })
-            if (status) {
-              total = status.messages ?? 0
-              unread = status.unseen ?? 0
-            }
-          } catch {
-            // Some servers refuse STATUS on \Noselect-like folders; show it empty.
+        let total = 0
+        let unread = 0
+        try {
+          const status = await client.status(item.path, { messages: true, unseen: true })
+          if (status) {
+            total = status.messages ?? 0
+            unread = status.unseen ?? 0
           }
+        } catch {
+          // Some servers refuse STATUS on special folders; show them as empty.
         }
         result.push({
           path: item.path,
