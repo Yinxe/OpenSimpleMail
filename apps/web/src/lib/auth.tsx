@@ -1,4 +1,4 @@
-import type { AppConfigDto, UserDto } from '@osm/shared'
+import type { AppConfigDto, SetupPayload, UserDto } from '@osm/shared'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   createContext,
@@ -19,6 +19,8 @@ interface AuthContextValue {
   register: (name: string, email: string, password: string) => Promise<void>
   demoLogin: () => Promise<void>
   logout: () => Promise<void>
+  setup: (payload: SetupPayload) => Promise<void>
+  refreshConfig: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -91,9 +93,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient])
 
+  const setup = useCallback(
+    async (payload: SetupPayload) => {
+      const result = await api.post<AuthResponse>('/setup', payload)
+      queryClient.clear()
+      setUser(result.user)
+      setConfig((current) =>
+        current
+          ? {
+              ...current,
+              initialized: true,
+              siteName: payload.siteName,
+              allowRegistration: payload.allowRegistration,
+              demoEnabled: payload.demoEnabled,
+            }
+          : current,
+      )
+    },
+    [queryClient],
+  )
+
+  const refreshConfig = useCallback(async () => {
+    const next = await api.get<AppConfigDto>('/auth/config')
+    setConfig(next)
+  }, [])
+
   const value = useMemo(
-    () => ({ user, config, loading, login, register, demoLogin, logout }),
-    [user, config, loading, login, register, demoLogin, logout],
+    () => ({
+      user,
+      config,
+      loading,
+      login,
+      register,
+      demoLogin,
+      logout,
+      setup,
+      refreshConfig,
+    }),
+    [user, config, loading, login, register, demoLogin, logout, setup, refreshConfig],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

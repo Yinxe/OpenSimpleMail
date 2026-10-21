@@ -10,6 +10,8 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 
 ## Features
 
+- First-run setup wizard: create the administrator and choose the initial site name, registration and demo policy
+- Administrator role with a public-registration switch; disabling it hides the sign-up UI and rejects the API server-side
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
 - Unified inbox across all accounts, plus a per-account folder tree
 - Pagination, search, read/unread, star, archive and delete (moves to the server trash when available)
@@ -39,7 +41,7 @@ openssl rand -base64 32   # put this into APP_SECRET
 npm run dev
 ```
 
-Open <http://localhost:5173>, create a local account, then add a mailbox or click “Try the demo mailbox”.
+Open <http://localhost:5173>. The first visit starts a setup wizard where you create the administrator account and choose the initial system policy; after that you can add a mailbox or try the demo workspace.
 
 ### Production
 
@@ -61,6 +63,18 @@ docker compose up -d --build
 
 Mail data and accounts live in the `open-simple-mail-data` volume.
 
+## First-run setup and roles
+
+A fresh installation redirects to `/setup`. The wizard creates the first administrator and stores the initial site name, public-registration flag and demo flag. Until setup is complete, application APIs return `412 Precondition Failed`; only health, public config and the setup endpoint are reachable.
+
+Administrators can change these options later under **Settings → System settings**:
+
+- **Allow public registration** — when off, `/register` shows a closed notice, the register link is hidden and `POST /api/auth/register` returns 403.
+- **Enable demo mailbox** — controls the “Try the demo mailbox” button.
+- **Site name** — shown on the login page, page titles and settings.
+
+Upgrading an older database promotes the oldest existing user to administrator and keeps registration open, preserving the previous behaviour.
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -70,7 +84,7 @@ Mail data and accounts live in the `open-simple-mail-data` volume.
 | `HOST` | `0.0.0.0` | Listen address |
 | `DATABASE_PATH` | `data/open-simple-mail.db` | SQLite file |
 | `WEB_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed browser origins, comma separated |
-| `DEMO_ENABLED` | `true` | Show the demo login button |
+| `DEMO_ENABLED` | `true` | Initial demo flag for a fresh database; after setup the value in Settings wins |
 | `MAX_ATTACHMENT_MB` | `25` | Total outgoing attachment limit |
 | `SESSION_DAYS` | `30` | Session lifetime |
 | `COOKIE_SECURE` | `false` | Set to `true` behind HTTPS |
@@ -81,6 +95,8 @@ Most providers require an app-specific password (Gmail, iCloud, Yahoo) or an aut
 
 ## Security
 
+- The first administrator must be created through `/setup`; application APIs are blocked until initialization completes.
+- Public registration can be disabled by an administrator and is enforced by the API, not just hidden in the UI.
 - Passwords are hashed with scrypt; session tokens are stored as SHA-256 digests in HttpOnly, SameSite=Lax cookies.
 - Mailbox passwords are encrypted with AES-256-GCM and never returned by the API.
 - Email HTML is sanitized server-side and rendered inside a sandboxed iframe with `default-src 'none'`.

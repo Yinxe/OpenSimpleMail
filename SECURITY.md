@@ -28,7 +28,8 @@ What the application protects against:
 - **XSS from email content**: HTML is sanitized server-side (scripts, event handlers and dangerous URLs removed) and rendered inside a sandboxed iframe with `default-src 'none'`. Scripts cannot run even if a sanitizer bypass exists.
 - **Tracking pixels**: remote images are blocked by CSP until the reader clicks “Show images”.
 - **CSRF**: state-changing requests must come from an allowed `Origin`; cookies are `SameSite=Lax`.
-- **Brute force**: auth endpoints are rate limited (per IP), passwords are hashed with scrypt.
+- **Brute force**: auth endpoints and the setup endpoint are rate limited (per IP), passwords are hashed with scrypt.
+- **Unauthorized administration**: the first-run wizard creates the only administrator; admin settings endpoints require `isAdmin`, and public registration can be disabled server-side.
 - **Header injection**: attachment filenames and generated headers are sanitized.
 
 What it does **not** protect against:
@@ -36,18 +37,21 @@ What it does **not** protect against:
 - **A compromised server or `APP_SECRET`**. Anyone with both the database and the secret can decrypt mailbox credentials.
 - **Untrusted multi-tenant use**. Any authenticated user can ask the server to connect to an arbitrary IMAP/SMTP host and port. This is inherent to a bring-your-own-mailbox client and creates an SSRF surface. Do not offer public sign-ups.
 - **Malicious attachments**. Files are downloaded as-is; they are never executed by the server, but your desktop may still open them.
+- **First-visitor takeover before setup**. While the database is uninitialized, `/api/setup` is intentionally public so the operator can create the first administrator. Anyone who can reach the instance before setup can claim it. Complete the wizard immediately after deployment, or keep the instance behind a private network / proxy auth until initialized.
 - **Phishing / spoofed senders**. The UI displays the headers the mail server provides; it does not verify DKIM or DMARC.
 - **Email content confidentiality on the mail server**. IMAP/SMTP TLS protects transport, but messages still live on your provider's servers.
 
 ## Hardening checklist
 
-1. Set a long random `APP_SECRET` (for example `openssl rand -base64 48`) and keep it out of version control.
-2. Serve the app over HTTPS (reverse proxy such as Caddy, Nginx or Traefik) and set `COOKIE_SECURE=true`.
-3. Keep `DEMO_ENABLED=false` on a public instance.
-4. Restrict access at the network layer (VPN, Tailscale, basic auth at the proxy) if the instance is internet-facing.
-5. Back up the SQLite database and the secret together; losing the secret makes stored mailbox passwords unrecoverable.
-6. Keep Node.js and npm dependencies up to date; run `npm audit` periodically.
-7. Do not run the container as root — the provided image uses the `node` user.
+1. Complete the first-run setup immediately, or restrict access to the instance until it is initialized.
+2. Set a long random `APP_SECRET` (for example `openssl rand -base64 48`) and keep it out of version control.
+3. Serve the app over HTTPS (reverse proxy such as Caddy, Nginx or Traefik) and set `COOKIE_SECURE=true`.
+4. Disable public registration under **Settings → System settings** unless you really need it.
+5. Keep the demo mailbox disabled on a public instance.
+6. Restrict access at the network layer (VPN, Tailscale, basic auth at the proxy) if the instance is internet-facing.
+7. Back up the SQLite database and the secret together; losing the secret makes stored mailbox passwords unrecoverable.
+8. Keep Node.js and npm dependencies up to date; run `npm audit` periodically.
+9. Do not run the container as root — the provided image uses the `node` user.
 
 ## Known limitations
 

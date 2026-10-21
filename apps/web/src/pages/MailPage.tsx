@@ -59,7 +59,7 @@ function pickMailbox(mailboxes: MailboxDto[]): string {
 }
 
 export function MailPage() {
-  const { user, logout } = useAuth()
+  const { user, config, logout } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -446,8 +446,9 @@ export function MailPage() {
 
   useEffect(() => {
     const subject = detailQuery.data?.subject?.trim()
-    document.title = subject ? `${subject} · OpenSimpleMail` : `${listTitle} · OpenSimpleMail`
-  }, [detailQuery.data?.subject, listTitle])
+    const siteName = config?.siteName ?? 'OpenSimpleMail'
+    document.title = subject ? `${subject} · ${siteName}` : `${listTitle} · ${siteName}`
+  }, [config?.siteName, detailQuery.data?.subject, listTitle])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

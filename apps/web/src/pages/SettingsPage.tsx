@@ -1,4 +1,9 @@
-import type { AccountDto, TestResultDto } from '@osm/shared'
+import type {
+  AccountDto,
+  SystemSettingsDto,
+  TestResultDto,
+  UpdateSystemSettingsPayload,
+} from '@osm/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -10,11 +15,12 @@ import {
   Moon,
   Pencil,
   Plus,
+  Settings2,
   ShieldCheck,
   Sun,
   Trash2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AccountDialog } from '@/components/AccountDialog'
 import { Avatar } from '@/components/Avatar'
@@ -38,7 +44,7 @@ const THEME_OPTIONS: {
 ]
 
 export function SettingsPage() {
-  const { user, config, logout } = useAuth()
+  const { user, config, logout, refreshConfig } = useAuth()
   const { theme, setTheme } = useTheme()
   const toast = useToast()
   const navigate = useNavigate()
@@ -47,11 +53,51 @@ export function SettingsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<AccountDto | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [adminForm, setAdminForm] = useState({
+    siteName: 'OpenSimpleMail',
+    allowRegistration: false,
+    demoEnabled: true,
+  })
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: () => api.get<AccountDto[]>('/accounts'),
   })
+
+  const adminQuery = useQuery({
+    queryKey: ['admin-settings'],
+    queryFn: () => api.get<SystemSettingsDto>('/admin/settings'),
+    enabled: Boolean(user?.isAdmin),
+  })
+
+  useEffect(() => {
+    if (!adminQuery.data) return
+    setAdminForm({
+      siteName: adminQuery.data.siteName,
+      allowRegistration: adminQuery.data.allowRegistration,
+      demoEnabled: adminQuery.data.demoEnabled,
+    })
+  }, [adminQuery.data])
+
+  const adminMutation = useMutation({
+    mutationFn: (payload: UpdateSystemSettingsPayload) =>
+      api.patch<SystemSettingsDto>('/admin/settings', payload),
+    onSuccess: (data) => {
+      setAdminForm({
+        siteName: data.siteName,
+        allowRegistration: data.allowRegistration,
+        demoEnabled: data.demoEnabled,
+      })
+      queryClient.invalidateQueries({ queryKey: ['admin-settings'] })
+      void refreshConfig()
+      toast.success('系统设置已保存')
+    },
+    onError: (error) => toast.error('保存系统设置失败', errorMessage(error)),
+  })
+
+  useEffect(() => {
+    document.title = `设置 · ${config?.siteName ?? 'OpenSimpleMail'}`
+  }, [config?.siteName])
 
   const deleteMutation = useMutation({
     mutationFn: (accountId: string) => api.delete(`/accounts/${accountId}`),
@@ -118,6 +164,10 @@ export function SettingsPage() {
             <p>{user.email}</p>
             {user.isDemo ? (
               <span className="badge badge--warm">演示工作区</span>
+            ) : user.isAdmin ? (
+              <span className="badge badge--warm">
+                <ShieldCheck size={13} /> 管理员
+              </span>
             ) : (
               <span className="badge">
                 <BadgeCheck size={13} /> 本地账号
@@ -235,6 +285,90 @@ export function SettingsPage() {
             ) : null}
           </div>
         </section>
+
+        {user.isAdmin ? (
+          <section className="settings-card">
+            <div className="settings-card__head">
+              <div>
+                <h2>系统设置</h2>
+                <p>控制公开注册、演示入口与站点名称，仅管理员可见。</p>
+              </div>
+              <span className="badge">
+                <Settings2 size={13} /> 管理员
+              </span>
+            </div>
+
+            <div className="admin-settings">
+              <label className="field">
+                <span className="field__label">站点名称</span>
+                <input
+                  className="input"
+                  value={adminForm.siteName}
+                  maxLength={60}
+                  onChange={(event) =>
+                    setAdminForm((current) => ({ ...current, siteName: event.target.value }))
+                  }
+                  placeholder="例如：Yinx 的邮箱"
+                />
+              </label>
+
+              <label className="switch-row">
+                <span className="switch-row__text">
+                  <strong>允许公开注册</strong>
+                  <small>
+                    开启后任何人都可以创建本地账号；关闭后只有管理员能创建账号。
+                    {adminForm.allowRegistration ? ' 当前：允许注册。' : ' 当前：仅管理员可创建。'}
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  className="switch"
+                  checked={adminForm.allowRegistration}
+                  onChange={(event) =>
+                    setAdminForm((current) => ({
+                      ...current,
+                      allowRegistration: event.target.checked,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="switch-row">
+                <span className="switch-row__text">
+                  <strong>启用演示邮箱</strong>
+                  <small>在登录页保留「用演示邮箱直接体验」入口，适合展示或试用。</small>
+                </span>
+                <input
+                  type="checkbox"
+                  className="switch"
+                  checked={adminForm.demoEnabled}
+                  onChange={(event) =>
+                    setAdminForm((current) => ({ ...current, demoEnabled: event.target.checked }))
+                  }
+                />
+              </label>
+
+              <div className="admin-settings__foot">
+                <span>保存后立即生效；已登录用户不会受到影响。</span>
+                <button
+                  type="button"
+                  className="button button--primary button--sm"
+                  onClick={() =>
+                    adminMutation.mutate({
+                      siteName: adminForm.siteName.trim(),
+                      allowRegistration: adminForm.allowRegistration,
+                      demoEnabled: adminForm.demoEnabled,
+                    })
+                  }
+                  disabled={adminMutation.isPending || !adminForm.siteName.trim()}
+                >
+                  {adminMutation.isPending ? <Spinner /> : <ShieldCheck size={14} />}
+                  保存设置
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section className="settings-card">
           <div className="settings-card__head">

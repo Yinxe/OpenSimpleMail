@@ -38,6 +38,26 @@ export function RegisterPage() {
     }
   }
 
+  if (config && !config.allowRegistration) {
+    return (
+      <AuthLayout version={config.version}>
+        <div className="auth-card auth-card--closed">
+          <span className="auth-card__closed-icon">
+            <LockKeyhole size={24} />
+          </span>
+          <p className="eyebrow">REGISTRATION CLOSED</p>
+          <h2>注册已关闭</h2>
+          <p className="auth-card__sub">
+            {config.siteName} 目前只允许管理员创建账号。如果你需要访问权限，请联系系统管理员。
+          </p>
+          <Link to="/login" className="button button--soft button--block auth-card__closed-action">
+            返回登录
+          </Link>
+        </div>
+      </AuthLayout>
+    )
+  }
+
   return (
     <AuthLayout version={config?.version}>
       <div className="auth-card">

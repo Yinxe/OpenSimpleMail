@@ -10,13 +10,43 @@ export interface UserDto {
   email: string
   name: string
   isDemo: boolean
+  isAdmin: boolean
   createdAt: string
 }
 
 export interface AppConfigDto {
+  initialized: boolean
+  siteName: string
+  allowRegistration: boolean
   demoEnabled: boolean
   version: string
   maxAttachmentMb: number
+}
+
+export interface SystemSettingsDto {
+  initialized: boolean
+  siteName: string
+  allowRegistration: boolean
+  demoEnabled: boolean
+}
+
+export interface SetupAdminDto {
+  name: string
+  email: string
+  password: string
+}
+
+export interface SetupPayload {
+  siteName: string
+  allowRegistration: boolean
+  demoEnabled: boolean
+  admin: SetupAdminDto
+}
+
+export interface UpdateSystemSettingsPayload {
+  siteName?: string
+  allowRegistration?: boolean
+  demoEnabled?: boolean
 }
 
 export interface ServerSettingsDto {

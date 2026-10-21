@@ -2,6 +2,21 @@
 
 All notable changes to OpenSimpleMail are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- First-run setup wizard: creates the initial administrator and stores site name, public-registration and demo-mode policy.
+- Administrator role (`users.is_admin`), admin-only system settings API and UI.
+- Public registration switch enforced server-side; the login/register pages reflect the closed state.
+- Setup guard: application APIs return 412 until the system is initialized; health, public config and `/api/setup` remain reachable.
+- Automatic upgrade path: existing installations promote the oldest user to administrator and keep registration open.
+
+### Security
+
+- Demo login and registration are blocked before setup completes.
+- Non-admin users cannot read or change system settings.
+
 ## [0.1.0] - 2026-10-21
 
 ### Added

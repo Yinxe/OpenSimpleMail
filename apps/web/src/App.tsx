@@ -6,6 +6,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { MailPage } from '@/pages/MailPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { SetupPage } from '@/pages/SetupPage'
 
 function BootScreen() {
   return (
@@ -16,23 +17,52 @@ function BootScreen() {
   )
 }
 
+function ConnectionProblem() {
+  return (
+    <div className="boot">
+      <Logo />
+      <span className="boot__hint">无法连接后端服务，请确认服务器已启动</span>
+      <button
+        type="button"
+        className="button button--soft button--sm"
+        onClick={() => window.location.reload()}
+      >
+        重新加载
+      </button>
+    </div>
+  )
+}
+
 function Protected({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth()
+  const { user, config, loading } = useAuth()
   if (loading) return <BootScreen />
+  if (!config) return <ConnectionProblem />
+  if (!config.initialized) return <Navigate to="/setup" replace />
   if (!user) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
 function PublicOnly({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth()
+  const { user, config, loading } = useAuth()
   if (loading) return <BootScreen />
+  if (!config) return <ConnectionProblem />
+  if (!config.initialized) return <Navigate to="/setup" replace />
   if (user) return <Navigate to="/app" replace />
   return <>{children}</>
+}
+
+function RootRedirect() {
+  const { user, config, loading } = useAuth()
+  if (loading) return <BootScreen />
+  if (!config) return <ConnectionProblem />
+  if (!config.initialized) return <Navigate to="/setup" replace />
+  return <Navigate to={user ? '/app' : '/login'} replace />
 }
 
 export function App() {
   return (
     <Routes>
+      <Route path="/setup" element={<SetupPage />} />
       <Route
         path="/login"
         element={
@@ -65,7 +95,7 @@ export function App() {
           </Protected>
         }
       />
-      <Route path="*" element={<Navigate to="/app" replace />} />
+      <Route path="*" element={<RootRedirect />} />
     </Routes>
   )
 }

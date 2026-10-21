@@ -47,7 +47,9 @@ export function LoginPage() {
       <div className="auth-card">
         <p className="eyebrow">WELCOME BACK</p>
         <h2>登录你的邮箱工作台</h2>
-        <p className="auth-card__sub">继续处理那些值得认真回复的邮件。</p>
+        <p className="auth-card__sub">
+          欢迎回到 {config?.siteName ?? 'OpenSimpleMail'}，继续处理那些值得认真回复的邮件。
+        </p>
 
         <form className="form" onSubmit={onSubmit}>
           <label className="field">
@@ -108,9 +110,15 @@ export function LoginPage() {
           </>
         ) : null}
 
-        <p className="auth-card__switch">
-          还没有账号？<Link to="/register">创建一个</Link>
-        </p>
+        {config?.allowRegistration ? (
+          <p className="auth-card__switch">
+            还没有账号？<Link to="/register">创建一个</Link>
+          </p>
+        ) : (
+          <p className="auth-card__hint auth-card__hint--closed">
+            公开注册已关闭。如需账号，请联系系统管理员。
+          </p>
+        )}
       </div>
     </AuthLayout>
   )

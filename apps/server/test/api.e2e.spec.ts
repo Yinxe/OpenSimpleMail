@@ -112,6 +112,114 @@ afterAll(async () => {
   }
 })
 
+describe('first-run setup', () => {
+  const admin = new ApiClient()
+  const adminEmail = `admin-${Date.now()}@example.com`
+
+  it('starts uninitialized and blocks the application', async () => {
+    const config = await admin.json<{
+      initialized: boolean
+      allowRegistration: boolean
+      siteName: string
+    }>('/auth/config')
+    expect(config.status).toBe(200)
+    expect(config.body.initialized).toBe(false)
+    expect(config.body.allowRegistration).toBe(false)
+
+    const accounts = await admin.json('/accounts')
+    expect(accounts.status).toBe(412)
+
+    const register = await admin.json('/auth/register', {
+      ...post({ name: 'Too Early', email: 'early@example.com', password: 'a-strong-password' }),
+    })
+    expect(register.status).toBe(412)
+  })
+
+  it('creates the administrator and stores the initial configuration', async () => {
+    const setup = await admin.json<AuthResponse>('/setup', {
+      ...post({
+        siteName: 'E2E Mail',
+        allowRegistration: true,
+        demoEnabled: true,
+        admin: { name: 'E2E Admin', email: adminEmail, password: 'admin-password' },
+      }),
+    })
+    expect(setup.status).toBe(200)
+    expect(setup.body.user.email).toBe(adminEmail)
+    expect(setup.body.user.isAdmin).toBe(true)
+
+    const me = await admin.json<AuthResponse>('/auth/me')
+    expect(me.status).toBe(200)
+    expect(me.body.user.isAdmin).toBe(true)
+
+    const config = await admin.json<{
+      initialized: boolean
+      siteName: string
+      allowRegistration: boolean
+    }>('/auth/config')
+    expect(config.body.initialized).toBe(true)
+    expect(config.body.siteName).toBe('E2E Mail')
+    expect(config.body.allowRegistration).toBe(true)
+
+    const duplicate = await admin.json('/setup', {
+      ...post({
+        siteName: 'Again',
+        allowRegistration: true,
+        demoEnabled: true,
+        admin: { name: 'Again', email: 'again@example.com', password: 'admin-password' },
+      }),
+    })
+    expect(duplicate.status).toBe(409)
+  })
+
+  it('lets only administrators change system settings', async () => {
+    const settings = await admin.json<{ allowRegistration: boolean; demoEnabled: boolean }>(
+      '/admin/settings',
+    )
+    expect(settings.status).toBe(200)
+    expect(settings.body.allowRegistration).toBe(true)
+
+    const updated = await admin.json<{ siteName: string; allowRegistration: boolean }>(
+      '/admin/settings',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ allowRegistration: false, siteName: 'E2E Mail Hub' }),
+      },
+    )
+    expect(updated.status).toBe(200)
+    expect(updated.body.allowRegistration).toBe(false)
+    expect(updated.body.siteName).toBe('E2E Mail Hub')
+
+    const blocked = await admin.json('/auth/register', {
+      ...post({ name: 'Blocked', email: 'blocked@example.com', password: 'a-strong-password' }),
+    })
+    expect(blocked.status).toBe(403)
+
+    const reopen = await admin.json('/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ allowRegistration: true }),
+    })
+    expect(reopen.status).toBe(200)
+
+    const member = new ApiClient()
+    const memberRegister = await member.json<AuthResponse>('/auth/register', {
+      ...post({
+        name: 'Member',
+        email: `member-${Date.now()}@example.com`,
+        password: 'a-strong-password',
+      }),
+    })
+    expect(memberRegister.status).toBe(201)
+    expect(memberRegister.body.user.isAdmin).toBe(false)
+
+    const forbidden = await member.json('/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ allowRegistration: false }),
+    })
+    expect(forbidden.status).toBe(403)
+  })
+})
+
 describe('authentication', () => {
   const email = `e2e-${Date.now()}@example.com`
   const client = new ApiClient()

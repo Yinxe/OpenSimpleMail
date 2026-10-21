@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto'
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
+  PreconditionFailedException,
   UnauthorizedException,
 } from '@nestjs/common'
 import type { UserDto } from '@osm/shared'
@@ -12,6 +14,8 @@ import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { CryptoService } from '../core/crypto.service'
 import { DatabaseService } from '../core/database.service'
 import { DemoService } from '../demo/demo.service'
+import { SettingsService } from '../settings/settings.service'
+import type { SetupDto } from '../setup/setup.dto'
 import type { LoginDto, RegisterDto } from './auth.dto'
 
 export const SESSION_COOKIE = 'osm_session'
@@ -22,6 +26,7 @@ interface UserRow {
   name: string
   password_hash: string
   is_demo: number
+  is_admin: number
   created_at: string
 }
 
@@ -41,6 +46,7 @@ function toUserDto(row: UserRow): UserDto {
     email: row.email,
     name: row.name,
     isDemo: row.is_demo === 1,
+    isAdmin: row.is_admin === 1,
     createdAt: row.created_at,
   }
 }
@@ -54,9 +60,18 @@ export class AuthService {
     private readonly db: DatabaseService,
     private readonly crypto: CryptoService,
     private readonly demo: DemoService,
+    private readonly settings: SettingsService,
   ) {}
 
   async register(dto: RegisterDto, userAgent?: string): Promise<SessionResult> {
+    const settings = this.settings.get()
+    if (!settings.initialized) {
+      throw new PreconditionFailedException('系统尚未初始化，请先完成启动引导')
+    }
+    if (!settings.allowRegistration) {
+      throw new ForbiddenException('管理员已关闭公开注册')
+    }
+
     const email = dto.email.trim().toLowerCase()
     if (!dto.name.trim()) throw new BadRequestException('昵称不能为空')
     const existing = this.db.db.prepare('SELECT id FROM users WHERE email = ?').get(email)
@@ -68,12 +83,13 @@ export class AuthService {
       name: dto.name.trim(),
       password_hash: await this.crypto.hashPassword(dto.password),
       is_demo: 0,
+      is_admin: 0,
       created_at: new Date().toISOString(),
     }
     this.db.db
       .prepare(
-        `INSERT INTO users (id, email, name, password_hash, is_demo, created_at)
-         VALUES (@id, @email, @name, @password_hash, @is_demo, @created_at)`,
+        `INSERT INTO users (id, email, name, password_hash, is_demo, is_admin, created_at)
+         VALUES (@id, @email, @name, @password_hash, @is_demo, @is_admin, @created_at)`,
       )
       .run(user)
 
@@ -81,6 +97,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, userAgent?: string): Promise<SessionResult> {
+    if (!this.settings.isInitialized()) {
+      throw new PreconditionFailedException('系统尚未初始化，请先完成启动引导')
+    }
     const email = dto.email.trim().toLowerCase()
     const row = this.db.db.prepare('SELECT * FROM users WHERE email = ?').get(email) as
       | UserRow
@@ -98,7 +117,11 @@ export class AuthService {
   }
 
   async demoLogin(userAgent?: string): Promise<SessionResult> {
-    if (!this.config.demoEnabled) throw new UnauthorizedException('演示模式未开启')
+    const settings = this.settings.get()
+    if (!settings.initialized) {
+      throw new PreconditionFailedException('系统尚未初始化，请先完成启动引导')
+    }
+    if (!settings.demoEnabled) throw new UnauthorizedException('演示模式未开启')
 
     const suffix = this.crypto.randomToken(6).toLowerCase()
     const user: UserRow = {
@@ -107,18 +130,66 @@ export class AuthService {
       name: '演示用户',
       password_hash: await this.crypto.hashPassword(this.crypto.randomToken(24)),
       is_demo: 1,
+      is_admin: 0,
       created_at: new Date().toISOString(),
     }
     this.db.db
       .prepare(
-        `INSERT INTO users (id, email, name, password_hash, is_demo, created_at)
-         VALUES (@id, @email, @name, @password_hash, @is_demo, @created_at)`,
+        `INSERT INTO users (id, email, name, password_hash, is_demo, is_admin, created_at)
+         VALUES (@id, @email, @name, @password_hash, @is_demo, @is_admin, @created_at)`,
       )
       .run(user)
 
     this.demo.ensureAccount(user.id)
     this.pruneDemoUsers()
     this.logger.log(`Created demo workspace for ${user.email}`)
+    return this.createSession(toUserDto(user), userAgent)
+  }
+
+  /**
+   * First-run setup: create the administrator and persist the initial system
+   * configuration in one transaction. The wizard is the only caller.
+   */
+  async completeSetup(dto: SetupDto, userAgent?: string): Promise<SessionResult> {
+    if (this.settings.isInitialized()) {
+      throw new ConflictException('系统已经初始化，无需重复执行启动引导')
+    }
+    if (!dto.admin.name.trim()) throw new BadRequestException('管理员昵称不能为空')
+
+    const email = dto.admin.email.trim().toLowerCase()
+    const existing = this.db.db.prepare('SELECT id FROM users WHERE email = ?').get(email)
+    if (existing) throw new ConflictException('该邮箱已注册')
+
+    const passwordHash = await this.crypto.hashPassword(dto.admin.password)
+    const user: UserRow = {
+      id: randomUUID(),
+      email,
+      name: dto.admin.name.trim(),
+      password_hash: passwordHash,
+      is_demo: 0,
+      is_admin: 1,
+      created_at: new Date().toISOString(),
+    }
+
+    const transaction = this.db.db.transaction(() => {
+      if (this.settings.isInitialized()) {
+        throw new ConflictException('系统已经初始化，无需重复执行启动引导')
+      }
+      this.db.db
+        .prepare(
+          `INSERT INTO users (id, email, name, password_hash, is_demo, is_admin, created_at)
+           VALUES (@id, @email, @name, @password_hash, @is_demo, @is_admin, @created_at)`,
+        )
+        .run(user)
+      this.settings.completeSetup({
+        siteName: dto.siteName,
+        allowRegistration: dto.allowRegistration,
+        demoEnabled: dto.demoEnabled,
+      })
+    })
+    transaction()
+
+    this.logger.log(`Completed first-run setup for ${email}`)
     return this.createSession(toUserDto(user), userAgent)
   }
 
