@@ -95,6 +95,63 @@ async function parseMessage(key: string, source: Buffer): Promise<ParsedMail> {
   return parsed
 }
 
+// Folder counts are only a sidebar hint and change slowly. Cache them briefly
+// so polling and several mounted components do not re-run a STATUS per folder.
+const MAILBOX_CACHE_TTL_MS = 45 * 1000
+const MAILBOX_CACHE_MAX_ENTRIES = 50
+const MAILBOX_STATUS_CONCURRENCY = 4
+
+interface MailboxCacheEntry {
+  mailboxes: MailboxDto[]
+  storedAt: number
+}
+
+const mailboxCache = new Map<string, MailboxCacheEntry>()
+
+function readMailboxCache(accountId: string): MailboxDto[] | null {
+  const entry = mailboxCache.get(accountId)
+  if (!entry) return null
+  if (Date.now() - entry.storedAt > MAILBOX_CACHE_TTL_MS) {
+    mailboxCache.delete(accountId)
+    return null
+  }
+  return entry.mailboxes.map((mailbox) => ({ ...mailbox }))
+}
+
+function writeMailboxCache(accountId: string, mailboxes: MailboxDto[]): void {
+  mailboxCache.delete(accountId)
+  while (mailboxCache.size >= MAILBOX_CACHE_MAX_ENTRIES) {
+    const oldest = mailboxCache.keys().next().value as string | undefined
+    if (!oldest) break
+    mailboxCache.delete(oldest)
+  }
+  mailboxCache.set(accountId, { mailboxes, storedAt: Date.now() })
+}
+
+function dropMailboxCache(accountId: string): void {
+  mailboxCache.delete(accountId)
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = next
+      next += 1
+      if (index >= items.length) return
+      results[index] = await fn(items[index] as T)
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  await Promise.all(workers)
+  return results
+}
+
 // The starred view merges SEARCH results from several folders. Cache the
 // merged summaries briefly so pagination and auto-refresh do not re-run a
 // search against every folder on each keystroke.
@@ -204,35 +261,44 @@ export class ImapProvider implements MailProvider {
   ) {}
 
   async listMailboxes(): Promise<MailboxDto[]> {
-    return this.pool.withClient(this.creds, async (client) => {
+    const cached = readMailboxCache(this.creds.accountId)
+    if (cached) return cached
+
+    const result = await this.pool.withClient(this.creds, async (client) => {
       // Plain LIST + per-folder STATUS is more portable than LIST-STATUS. Some
       // providers (notably QQ Mail) close the connection on the extended form.
       const list = await client.list()
-      const result: MailboxDto[] = []
-      for (const item of list) {
-        if (!item.listed || item.flags.has('\\Noselect')) continue
-        let total = 0
-        let unread = 0
-        try {
-          const status = await client.status(item.path, { messages: true, unseen: true })
-          if (status) {
-            total = status.messages ?? 0
-            unread = status.unseen ?? 0
+      const items = list.filter((item) => item.listed && !item.flags.has('\\Noselect'))
+
+      // A few STATUS commands are pipelined at a time instead of one full
+      // round-trip per folder; failures stay isolated to their folder.
+      const counts = await mapWithConcurrency(
+        items,
+        MAILBOX_STATUS_CONCURRENCY,
+        async (item): Promise<{ total: number; unread: number }> => {
+          try {
+            const status = await client.status(item.path, { messages: true, unseen: true })
+            if (!status) return { total: 0, unread: 0 }
+            return { total: status.messages ?? 0, unread: status.unseen ?? 0 }
+          } catch {
+            // Some servers refuse STATUS on special folders; show them as empty.
+            return { total: 0, unread: 0 }
           }
-        } catch {
-          // Some servers refuse STATUS on special folders; show them as empty.
-        }
-        result.push({
-          path: item.path,
-          name: item.name,
-          delimiter: item.delimiter,
-          specialUse: item.specialUse ?? null,
-          total,
-          unread,
-        })
-      }
-      return result
+        },
+      )
+
+      return items.map((item, index) => ({
+        path: item.path,
+        name: item.name,
+        delimiter: item.delimiter,
+        specialUse: item.specialUse ?? null,
+        total: counts[index]?.total ?? 0,
+        unread: counts[index]?.unread ?? 0,
+      }))
     })
+
+    writeMailboxCache(this.creds.accountId, result)
+    return result
   }
 
   async listMessages(options: ListMessagesOptions): Promise<MessagePageDto> {
@@ -451,6 +517,7 @@ export class ImapProvider implements MailProvider {
       }
     })
     if (flags.flagged !== undefined) dropStarredCache(this.creds.accountId)
+    if (flags.seen !== undefined) dropMailboxCache(this.creds.accountId)
   }
 
   async move(mailbox: string, uid: number, destination: string): Promise<void> {
@@ -464,6 +531,7 @@ export class ImapProvider implements MailProvider {
     })
     dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
+    dropMailboxCache(this.creds.accountId)
   }
 
   async delete(mailbox: string, uid: number): Promise<DeleteResult> {
@@ -488,6 +556,7 @@ export class ImapProvider implements MailProvider {
     })
     dropParsedCache(parsedCacheKey(this.creds.accountId, mailbox, uid))
     dropStarredCache(this.creds.accountId)
+    dropMailboxCache(this.creds.accountId)
     return result
   }
 
@@ -508,6 +577,7 @@ export class ImapProvider implements MailProvider {
       // The message was delivered; failing to file a copy must not fail the request.
       this.logger.warn(`Could not append sent message to Sent folder: ${String(error)}`)
     }
+    dropMailboxCache(this.creds.accountId)
 
     return { messageId: sent.messageId, accepted: sent.accepted }
   }
