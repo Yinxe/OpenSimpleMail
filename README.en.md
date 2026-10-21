@@ -26,6 +26,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 - Server-side HTML sanitization, sandboxed iframe rendering with a strict CSP, remote images blocked by default
 - Demo workspace with 20+ seeded emails, so the UI can be explored without credentials
 - Responsive three-pane UI, light/dark themes, keyboard shortcuts (`j/k/c/r/a//`)
+- Unread badges in the tab title and favicon, plus optional desktop notifications for new mail while the tab is in the background
 - Biome, Vitest, GitHub Actions, Docker and docker-compose included
 
 ## Stack

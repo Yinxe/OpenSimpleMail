@@ -20,6 +20,7 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Unread badges: title count and dynamic favicon; optional desktop notifications for new mail while the tab is in the background, with a Settings toggle and permission request.
 - Batch selection in the message list: per-row checkboxes with Shift range, select-all, and bulk mark read/unread, archive and delete; the server applies each batch with one IMAP command.
 - Undo send: the composer waits five seconds before delivering, shows a countdown on the send button and footer, and offers a cancel action both in the footer and in the toast.
 - Read-state controls in the message list: a clear unread dot / read check marker, a per-row read/unread toggle, and a one-click "mark all read" action for the current folder or unified inbox.

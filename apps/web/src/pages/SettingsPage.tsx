@@ -157,6 +157,28 @@ export function SettingsPage() {
     }
   }
 
+  async function toggleDesktopNotifications(enabled: boolean) {
+    if (!enabled) {
+      setPrefForm((current) => ({ ...current, desktopNotifications: false }))
+      return
+    }
+    if (typeof Notification === 'undefined') {
+      toast.error('当前浏览器不支持桌面通知')
+      return
+    }
+    try {
+      const permission =
+        Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
+      if (permission !== 'granted') {
+        toast.error('未获得通知权限', '请在浏览器的站点设置中允许通知后重试')
+        return
+      }
+      setPrefForm((current) => ({ ...current, desktopNotifications: true }))
+    } catch {
+      toast.error('无法请求通知权限')
+    }
+  }
+
   if (!user) return null
 
   const accounts = accountsQuery.data ?? []
@@ -515,6 +537,19 @@ export function SettingsPage() {
                     loadRemoteImages: event.target.checked,
                   }))
                 }
+              />
+            </label>
+
+            <label className="switch-row">
+              <span className="switch-row__text">
+                <strong>桌面通知</strong>
+                <small>页面在后台时，新邮件会弹出系统通知；首次开启需要浏览器授权。</small>
+              </span>
+              <input
+                type="checkbox"
+                className="switch"
+                checked={prefForm.desktopNotifications}
+                onChange={(event) => void toggleDesktopNotifications(event.target.checked)}
               />
             </label>
           </div>

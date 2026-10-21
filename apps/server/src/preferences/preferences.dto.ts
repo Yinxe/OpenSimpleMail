@@ -23,6 +23,10 @@ export class UpdatePreferencesDto {
   loadRemoteImages?: boolean
 
   @IsOptional()
+  @IsBoolean()
+  desktopNotifications?: boolean
+
+  @IsOptional()
   @IsIn(['account', 'unified'])
   defaultView?: 'account' | 'unified'
 

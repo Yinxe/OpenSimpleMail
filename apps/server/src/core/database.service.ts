@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   page_size          INTEGER NOT NULL DEFAULT 30,
   auto_mark_read     INTEGER NOT NULL DEFAULT 1,
   load_remote_images INTEGER NOT NULL DEFAULT 0,
+  desktop_notifications INTEGER NOT NULL DEFAULT 0,
   default_view       TEXT NOT NULL DEFAULT 'account',
   density            TEXT NOT NULL DEFAULT 'comfortable',
   updated_at         TEXT NOT NULL
@@ -117,6 +118,15 @@ export class DatabaseService implements OnModuleDestroy {
     }[]
     if (!accountColumns.some((column) => column.name === 'signature')) {
       this.db.exec("ALTER TABLE accounts ADD COLUMN signature TEXT NOT NULL DEFAULT ''")
+    }
+
+    const preferenceColumns = this.db.prepare('PRAGMA table_info(user_preferences)').all() as {
+      name: string
+    }[]
+    if (!preferenceColumns.some((column) => column.name === 'desktop_notifications')) {
+      this.db.exec(
+        'ALTER TABLE user_preferences ADD COLUMN desktop_notifications INTEGER NOT NULL DEFAULT 0',
+      )
     }
 
     const settings = this.db

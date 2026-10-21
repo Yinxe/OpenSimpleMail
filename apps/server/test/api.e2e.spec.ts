@@ -364,6 +364,7 @@ describe('user preferences', () => {
       pageSize: number
       autoMarkRead: boolean
       loadRemoteImages: boolean
+      desktopNotifications: boolean
       defaultView: string
       density: string
     }>('/preferences')
@@ -373,6 +374,7 @@ describe('user preferences', () => {
       pageSize: 30,
       autoMarkRead: true,
       loadRemoteImages: false,
+      desktopNotifications: false,
       defaultView: 'account',
       density: 'comfortable',
     })
@@ -386,6 +388,7 @@ describe('user preferences', () => {
         pageSize: 50,
         autoMarkRead: false,
         loadRemoteImages: true,
+        desktopNotifications: true,
         defaultView: 'unified',
         density: 'compact',
       }),
@@ -394,9 +397,14 @@ describe('user preferences', () => {
     expect(updated.body.refreshSeconds).toBe(15)
     expect(updated.body.density).toBe('compact')
 
-    const persisted = await client.json<{ pageSize: number; defaultView: string }>('/preferences')
+    const persisted = await client.json<{
+      pageSize: number
+      defaultView: string
+      desktopNotifications: boolean
+    }>('/preferences')
     expect(persisted.body.pageSize).toBe(50)
     expect(persisted.body.defaultView).toBe('unified')
+    expect(persisted.body.desktopNotifications).toBe(true)
   })
 
   it('rejects out-of-range values and unauthenticated access', async () => {

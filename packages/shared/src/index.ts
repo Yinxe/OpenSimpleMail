@@ -40,6 +40,8 @@ export interface UserPreferencesDto {
   pageSize: number
   autoMarkRead: boolean
   loadRemoteImages: boolean
+  /** Show a desktop notification for new mail while the tab is in the background. */
+  desktopNotifications: boolean
   defaultView: DefaultView
   density: ListDensity
 }
@@ -51,6 +53,7 @@ export const DEFAULT_PREFERENCES: UserPreferencesDto = {
   pageSize: 30,
   autoMarkRead: true,
   loadRemoteImages: false,
+  desktopNotifications: false,
   defaultView: 'account',
   density: 'comfortable',
 }

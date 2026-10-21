@@ -8,6 +8,7 @@ interface PreferencesRow {
   page_size: number
   auto_mark_read: number
   load_remote_images: number
+  desktop_notifications: number
   default_view: 'account' | 'unified'
   density: 'comfortable' | 'compact'
 }
@@ -20,7 +21,7 @@ export class PreferencesService {
     const row = this.db.db
       .prepare(
         `SELECT refresh_seconds, page_size, auto_mark_read, load_remote_images,
-                default_view, density
+                desktop_notifications, default_view, density
          FROM user_preferences WHERE user_id = ?`,
       )
       .get(userId) as PreferencesRow | undefined
@@ -32,6 +33,7 @@ export class PreferencesService {
       pageSize: row.page_size,
       autoMarkRead: row.auto_mark_read === 1,
       loadRemoteImages: row.load_remote_images === 1,
+      desktopNotifications: row.desktop_notifications === 1,
       defaultView: row.default_view,
       density: row.density,
     }
@@ -49,16 +51,17 @@ export class PreferencesService {
       .prepare(
         `INSERT INTO user_preferences (
           user_id, refresh_seconds, page_size, auto_mark_read, load_remote_images,
-          default_view, density, updated_at
+          desktop_notifications, default_view, density, updated_at
         ) VALUES (
           @userId, @refreshSeconds, @pageSize, @autoMarkRead, @loadRemoteImages,
-          @defaultView, @density, @now
+          @desktopNotifications, @defaultView, @density, @now
         )
         ON CONFLICT(user_id) DO UPDATE SET
           refresh_seconds = excluded.refresh_seconds,
           page_size = excluded.page_size,
           auto_mark_read = excluded.auto_mark_read,
           load_remote_images = excluded.load_remote_images,
+          desktop_notifications = excluded.desktop_notifications,
           default_view = excluded.default_view,
           density = excluded.density,
           updated_at = excluded.updated_at`,
@@ -69,6 +72,7 @@ export class PreferencesService {
         pageSize: next.pageSize,
         autoMarkRead: next.autoMarkRead ? 1 : 0,
         loadRemoteImages: next.loadRemoteImages ? 1 : 0,
+        desktopNotifications: next.desktopNotifications ? 1 : 0,
         defaultView: next.defaultView,
         density: next.density,
         now,

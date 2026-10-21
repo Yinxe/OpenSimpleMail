@@ -29,6 +29,7 @@ import { isDeleteConfirmSkipped, setDeleteConfirmSkipped } from '@/lib/deleteGua
 import type { ComposeMode } from '@/lib/drafts'
 import { displayAddress } from '@/lib/format'
 import { useToast } from '@/lib/toast'
+import { useNewMailNotifications, useUnreadBadge } from '@/lib/unread'
 
 const DEFAULT_MAILBOX = 'INBOX'
 
@@ -180,6 +181,22 @@ export function MailPage() {
     })
     return result
   }, [accounts, mailboxQueries])
+
+  const totalUnread = useMemo(
+    () => accounts.reduce((sum, account) => sum + (accountUnread[account.id] ?? 0), 0),
+    [accounts, accountUnread],
+  )
+  const notificationsReady =
+    accountsQuery.isSuccess && mailboxQueries.every((query) => query.isSuccess)
+
+  useUnreadBadge(totalUnread)
+  useNewMailNotifications({
+    count: totalUnread,
+    enabled: preferences.desktopNotifications,
+    ready: notificationsReady,
+    siteName: config?.siteName ?? 'OpenSimpleMail',
+    onOpen: () => navigate('/app'),
+  })
 
   const activeIndex = accounts.findIndex((account) => account.id === accountParam)
   const activeMailboxes = activeIndex >= 0 ? (mailboxQueries[activeIndex]?.data ?? []) : []
@@ -889,8 +906,11 @@ export function MailPage() {
   useEffect(() => {
     const subject = detailQuery.data?.subject?.trim()
     const siteName = config?.siteName ?? 'OpenSimpleMail'
-    document.title = subject ? `${subject} · ${siteName}` : `${listTitle} · ${siteName}`
-  }, [config?.siteName, detailQuery.data?.subject, listTitle])
+    const unreadPrefix = totalUnread > 0 ? `(${totalUnread}) ` : ''
+    document.title = `${unreadPrefix}${
+      subject ? `${subject} · ${siteName}` : `${listTitle} · ${siteName}`
+    }`
+  }, [config?.siteName, detailQuery.data?.subject, listTitle, totalUnread])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
