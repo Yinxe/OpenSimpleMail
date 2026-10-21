@@ -1,10 +1,11 @@
 services:
   open-simple-mail:
     build: .
+    image: open-simple-mail:latest
     container_name: open-simple-mail
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "22026:4000"
     env_file:
       - .env
     environment:
@@ -12,11 +13,13 @@ services:
       # The image and the port mapping are fixed to 4000; .env may set a
       # different PORT for local `npm run dev`.
       PORT: 4000
+      # SQLite and the attachment scratch tree share this directory, so the
+      # single bind mount below carries everything that has to survive.
       DATABASE_PATH: /app/data/open-simple-mail.db
+      ATTACHMENT_DIR: /app/data/attachments
     volumes:
-      # The database and the attachment scratch tree both live under /app/data,
-      # so uploads and extracted attachments never need a second volume.
-      - open-simple-mail-data:/app/data
-
-volumes:
-  open-simple-mail-data:
+      # A host directory instead of a named volume: back it up with cp/rsync,
+      # inspect data/attachments, and `docker compose down` never deletes it.
+      # The entrypoint fixes ownership of ./data on first start (see
+      # docker-entrypoint.sh); override `user:` only if you chown it yourself.
+      - ./data:/app/data
