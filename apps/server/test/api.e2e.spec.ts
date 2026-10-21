@@ -9,6 +9,7 @@ import type {
   MailboxDto,
   MessagePageDto,
   MoveOutcomeDto,
+  SavedDraftDto,
   UnifiedMessagePageDto,
   UserDto,
 } from '@osm/shared'
@@ -511,6 +512,36 @@ describe('demo mailbox', () => {
 
     const afterDelete = await client.json<MailboxDto[]>(`/accounts/${account.id}/mailboxes`)
     expect(afterDelete.body.some((item) => item.path === 'Projects 2026')).toBe(false)
+  })
+
+  it('saves a draft to the Drafts folder and removes it', async () => {
+    const saved = await client.json<SavedDraftDto>(`/accounts/${account.id}/drafts`, {
+      ...post({
+        to: 'draft@example.com',
+        subject: 'Draft subject',
+        text: 'hello',
+        html: '<p>hello</p>',
+      }),
+    })
+    expect(saved.status).toBe(200)
+    expect(saved.body.mailbox).toBe('Drafts')
+    expect(saved.body.uid).toBeGreaterThan(0)
+
+    const drafts = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=Drafts&page=1&pageSize=50`,
+    )
+    expect(drafts.body.messages.some((item) => item.uid === saved.body.uid)).toBe(true)
+
+    const removed = await client.json(
+      `/accounts/${account.id}/drafts/${saved.body.uid}?mailbox=Drafts`,
+      { method: 'DELETE' },
+    )
+    expect(removed.status).toBe(204)
+
+    const after = await client.json<MessagePageDto>(
+      `/accounts/${account.id}/messages?mailbox=Drafts&page=1&pageSize=50`,
+    )
+    expect(after.body.messages.some((item) => item.uid === saved.body.uid)).toBe(false)
   })
 
   it('empties a folder', async () => {

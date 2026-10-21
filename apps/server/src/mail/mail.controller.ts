@@ -30,10 +30,11 @@ import {
   MailboxQueryDto,
   MoveMessageDto,
   RenameMailboxDto,
+  SaveDraftDto,
   SendMessageDto,
 } from './mail.dto'
 import { MailService } from './mail.service'
-import type { MoveOutcome } from './mail.types'
+import type { MoveOutcome, SavedDraft } from './mail.types'
 
 /** Files accepted in one compose request; the module configures the size limit. */
 export const MAX_UPLOAD_FILES = 10
@@ -189,6 +190,36 @@ export class MailController {
     @Body() body: BulkDeleteDto,
   ): Promise<MoveOutcome> {
     return this.mail.removeMany(userId, accountId, body.mailbox, body.uids)
+  }
+
+  @Post('drafts')
+  @HttpCode(200)
+  async saveDraft(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Body() body: SaveDraftDto,
+  ): Promise<SavedDraft | null> {
+    return this.mail.saveDraft(userId, accountId, {
+      to: body.to ?? '',
+      cc: body.cc,
+      bcc: body.bcc,
+      subject: body.subject ?? '',
+      text: body.text,
+      html: body.html,
+      inReplyTo: body.inReplyTo,
+      references: body.references,
+    })
+  }
+
+  @Delete('drafts/:uid')
+  @HttpCode(204)
+  async removeDraft(
+    @CurrentUser('id') userId: string,
+    @Param('accountId') accountId: string,
+    @Param('uid', ParseIntPipe) uid: number,
+    @Query() query: MailboxQueryDto,
+  ): Promise<void> {
+    await this.mail.removeDraft(userId, accountId, query.mailbox, uid)
   }
 
   @Post('messages/:uid/flags')

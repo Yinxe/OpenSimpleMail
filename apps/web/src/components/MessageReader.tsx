@@ -15,6 +15,7 @@ import {
   Mail,
   MailOpen,
   Paperclip,
+  Pencil,
   Reply,
   ReplyAll,
   ShieldCheck,
@@ -50,6 +51,9 @@ interface MessageReaderProps {
   onDelete: (message: MessageDetailDto) => void
   onToggleRead: (message: MessageDetailDto) => void
   onArchive: (message: MessageDetailDto, destination: string) => void
+  /** True when the opened message lives in the Drafts folder. */
+  isDraft?: boolean
+  onEditDraft?: (message: MessageDetailDto) => void
 }
 
 const EMPTY_CODE_RESULT: VerificationResult = {
@@ -345,6 +349,8 @@ export function MessageReader({
   onDelete,
   onToggleRead,
   onArchive,
+  isDraft = false,
+  onEditDraft,
 }: MessageReaderProps) {
   const [allowImages, setAllowImages] = useState(defaultAllowImages)
   const [mode, setMode] = useState<ReaderMode>(readReaderMode)
@@ -479,28 +485,40 @@ export function MessageReader({
           </button>
         </div>
         <div className="reader__toolbar-right">
-          <button
-            type="button"
-            className="button button--soft button--sm"
-            onClick={() => onReply(message)}
-          >
-            <Reply size={15} /> 回复
-          </button>
-          <button
-            type="button"
-            className="button button--ghost button--sm"
-            onClick={() => onReplyAll(message)}
-            title="回复发件人和所有收件人（A）"
-          >
-            <ReplyAll size={15} /> 全部回复
-          </button>
-          <button
-            type="button"
-            className="button button--ghost button--sm"
-            onClick={() => onForward(message)}
-          >
-            <Forward size={15} /> 转发
-          </button>
+          {isDraft ? (
+            <button
+              type="button"
+              className="button button--soft button--sm"
+              onClick={() => onEditDraft?.(message)}
+            >
+              <Pencil size={15} /> 继续编辑
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="button button--soft button--sm"
+                onClick={() => onReply(message)}
+              >
+                <Reply size={15} /> 回复
+              </button>
+              <button
+                type="button"
+                className="button button--ghost button--sm"
+                onClick={() => onReplyAll(message)}
+                title="回复发件人和所有收件人（A）"
+              >
+                <ReplyAll size={15} /> 全部回复
+              </button>
+              <button
+                type="button"
+                className="button button--ghost button--sm"
+                onClick={() => onForward(message)}
+              >
+                <Forward size={15} /> 转发
+              </button>
+            </>
+          )}
         </div>
       </header>
 

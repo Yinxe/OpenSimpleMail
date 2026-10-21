@@ -1,9 +1,22 @@
-import type { AccountDto, AddressDto, MessageDetailDto, SendResultDto } from '@osm/shared'
+import type {
+  AccountDto,
+  AddressDto,
+  MessageDetailDto,
+  SavedDraftDto,
+  SendResultDto,
+} from '@osm/shared'
 import { Bold, Italic, Link2, List, Paperclip, Send, Trash2, Underline, X } from 'lucide-react'
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { type ComposeMode, clearDraft, composeDraftKey, loadDraft, saveDraft } from '@/lib/drafts'
+import {
+  type ComposeMode,
+  clearDraft,
+  composeDraftKey,
+  type DraftRemote,
+  loadDraft,
+  saveDraft,
+} from '@/lib/drafts'
 import { addressLine, displayAddress, formatBytes, formatFullDate, previewText } from '@/lib/format'
 import { useToast } from '@/lib/toast'
 import { Modal } from './Modal'
@@ -16,6 +29,9 @@ interface ComposerProps {
   accounts: AccountDto[]
   defaultAccountId: string | null
   source?: MessageDetailDto | null
+  /** Set when the composer edits an existing message from the Drafts folder. */
+  draftSource?: MessageDetailDto | null
+  draftAccountId?: string | null
   onClose: () => void
   onSent: (accountId: string) => void
 }
@@ -88,6 +104,17 @@ function replyAllCc(source: MessageDetailDto, accounts: AccountDto[], primary: s
   return recipients.join(', ')
 }
 
+function draftBodyHtml(source: MessageDetailDto): string {
+  if (source.html) return source.html
+  const text = source.text ?? ''
+  if (!text.trim()) return ''
+  return `<p>${escapeHtml(text).replace(/\n/g, '<br>')}</p>`
+}
+
+function addressesToInput(addresses: AddressDto[] | undefined): string {
+  return (addresses ?? []).map(formatRecipient).join(', ')
+}
+
 function hasMeaningfulHtml(html: string): boolean {
   if (/<img\b/i.test(html)) return true
   return (
@@ -130,6 +157,8 @@ function formatSavedAt(timestamp: number): string {
 }
 
 const UNDO_SEND_MS = 5000
+/** How often the local draft is mirrored into the server's Drafts folder. */
+const REMOTE_SYNC_MS = 15_000
 
 export function Composer({
   open,
@@ -137,6 +166,8 @@ export function Composer({
   accounts,
   defaultAccountId,
   source,
+  draftSource,
+  draftAccountId,
   onClose,
   onSent,
 }: ComposerProps) {
@@ -161,7 +192,11 @@ export function Composer({
   const sendTimer = useRef<number | null>(null)
   const sendInFlight = useRef(false)
   const fallbackAccountId = defaultAccountId ?? accounts[0]?.id ?? ''
-  const sourceKey = source ? (source.messageId ?? `${source.mailbox}:${source.uid}`) : 'new'
+  const sourceKey = draftSource
+    ? `draft:${draftSource.mailbox}:${draftSource.uid}`
+    : source
+      ? (source.messageId ?? `${source.mailbox}:${source.uid}`)
+      : 'new'
   const draftKey = user ? composeDraftKey(user.id, mode, sourceKey) : null
 
   const latest = useRef({ accountId, to, cc, bcc, subject })
@@ -169,6 +204,10 @@ export function Composer({
   const sentRef = useRef(false)
   const dirtyRef = useRef(false)
   const persistRef = useRef<(() => void) | null>(null)
+  const remoteRef = useRef<DraftRemote | null>(null)
+  const remoteSyncedAt = useRef(0)
+  const remoteBusy = useRef(false)
+  const [remoteSaved, setRemoteSaved] = useState(false)
 
   const persistDraft = useCallback((): void => {
     if (!draftKey || sentRef.current || !dirtyRef.current) return
@@ -191,6 +230,7 @@ export function Composer({
       bcc,
       subject,
       html,
+      remote: remoteRef.current ?? undefined,
     })
     if (savedAt) setDraftSavedAt(savedAt)
   }, [accountId, bcc, cc, draftKey, mode, sourceKey, subject, to])
@@ -198,6 +238,87 @@ export function Composer({
   useEffect(() => {
     persistRef.current = () => persistDraft()
   }, [persistDraft])
+
+  const dropRemoteDraft = useCallback(async (): Promise<void> => {
+    const previous = remoteRef.current
+    remoteRef.current = null
+    setRemoteSaved(false)
+    if (!previous) return
+    try {
+      await api.delete(
+        `/accounts/${previous.accountId}/drafts/${previous.uid}?mailbox=${encodeURIComponent(
+          previous.mailbox,
+        )}`,
+      )
+    } catch {
+      // The copy may already be gone (sent, deleted elsewhere); local state wins.
+    }
+  }, [])
+
+  // Mirror the local draft into the IMAP Drafts folder, throttled so a fast
+  // typist does not issue one APPEND per keystroke. The previous copy is
+  // replaced so the folder never accumulates duplicates.
+  const syncRemoteDraft = useCallback(
+    async (force = false): Promise<void> => {
+      if (!draftKey || sentRef.current || !dirtyRef.current || remoteBusy.current) return
+      const fields = latest.current
+      const html = editorRef.current?.innerHTML ?? ''
+      const empty =
+        !fields.to.trim() &&
+        !fields.cc.trim() &&
+        !fields.bcc.trim() &&
+        !fields.subject.trim() &&
+        !hasMeaningfulHtml(html)
+      if (empty || !fields.accountId) return
+      if (!force && Date.now() - remoteSyncedAt.current < REMOTE_SYNC_MS) return
+
+      remoteBusy.current = true
+      try {
+        const previous = remoteRef.current
+        if (previous) {
+          remoteRef.current = null
+          setRemoteSaved(false)
+          try {
+            await api.delete(
+              `/accounts/${previous.accountId}/drafts/${previous.uid}?mailbox=${encodeURIComponent(
+                previous.mailbox,
+              )}`,
+            )
+          } catch {
+            // Ignore: replacing the copy is best effort.
+          }
+        }
+        const saved = await api.post<SavedDraftDto | null>(`/accounts/${fields.accountId}/drafts`, {
+          to: fields.to,
+          cc: fields.cc,
+          bcc: fields.bcc,
+          subject: fields.subject,
+          text: editorRef.current?.innerText ?? '',
+          html: wrapOutgoingHtml(html),
+          inReplyTo: source?.messageId ?? undefined,
+          references: source
+            ? [...(source.references ?? []), ...(source.messageId ? [source.messageId] : [])]
+            : undefined,
+        })
+        if (saved) {
+          remoteRef.current = {
+            accountId: fields.accountId,
+            mailbox: saved.mailbox,
+            uid: saved.uid,
+          }
+          remoteSyncedAt.current = Date.now()
+          setRemoteSaved(true)
+          // Record the server copy in the local draft so a reload can replace it.
+          persistRef.current?.()
+        }
+      } catch {
+        // Server-side drafts are best effort; the local copy is already saved.
+      } finally {
+        remoteBusy.current = false
+      }
+    },
+    [draftKey, source],
+  )
 
   // The parent remounts the composer for every compose session, so this effect
   // initialises either the restored draft or the reply/forward template once.
@@ -223,8 +344,27 @@ export function Composer({
       setShowCc(Boolean(saved.cc || saved.bcc))
       setSubject(saved.subject)
       setDraftSavedAt(saved.savedAt)
+      remoteRef.current = saved.remote ?? null
+      setRemoteSaved(Boolean(saved.remote))
+      remoteSyncedAt.current = saved.remote ? Date.now() : 0
       if (editorRef.current) editorRef.current.innerHTML = saved.html
       toast.info('已恢复草稿', '发送成功后会自动清除')
+    } else if (draftSource) {
+      // Editing a message that already sits in the Drafts folder: the server
+      // copy is the source of truth, so no signature or template is added.
+      setAccountId(fallbackAccountId)
+      setTo(addressesToInput(draftSource.to))
+      setCc(addressesToInput(draftSource.cc))
+      setBcc(addressesToInput(draftSource.bcc))
+      setShowCc(Boolean(draftSource.cc.length || draftSource.bcc.length))
+      setSubject(draftSource.subject)
+      setDraftSavedAt(null)
+      remoteRef.current = draftAccountId
+        ? { accountId: draftAccountId, mailbox: draftSource.mailbox, uid: draftSource.uid }
+        : null
+      setRemoteSaved(Boolean(remoteRef.current))
+      remoteSyncedAt.current = remoteRef.current ? Date.now() : 0
+      if (editorRef.current) editorRef.current.innerHTML = draftBodyHtml(draftSource)
     } else {
       setAccountId(fallbackAccountId)
       setDraftSavedAt(null)
@@ -263,9 +403,12 @@ export function Composer({
   // biome-ignore lint/correctness/useExhaustiveDependencies: bodyVersion is an intentional change signal, not a value read by the effect
   useEffect(() => {
     if (!draftKey) return
-    const timer = window.setTimeout(() => persistDraft(), 600)
+    const timer = window.setTimeout(() => {
+      persistDraft()
+      void syncRemoteDraft()
+    }, 600)
     return () => window.clearTimeout(timer)
-  }, [bodyVersion, draftKey, persistDraft])
+  }, [bodyVersion, draftKey, persistDraft, syncRemoteDraft])
 
   // Persist on unmount as well, so navigating away cannot lose the last keystrokes.
   useEffect(() => {
@@ -300,6 +443,8 @@ export function Composer({
   function requestClose() {
     if (sending) return
     persistDraft()
+    // Closing keeps the draft, so make sure the server copy is current.
+    void syncRemoteDraft(true)
     if (files.length > 0) {
       const confirmed = window.confirm('附件不会随草稿保存，关闭后需要重新添加。确定关闭吗？')
       if (!confirmed) return
@@ -310,6 +455,7 @@ export function Composer({
   function discardDraft() {
     if (sending || !draftKey) return
     if (!window.confirm('丢弃这封草稿？此操作不可撤销。')) return
+    void dropRemoteDraft()
     clearDraft(draftKey)
     dirtyRef.current = false
     setDraftSavedAt(null)
@@ -357,6 +503,7 @@ export function Composer({
     try {
       await api.postForm<SendResultDto>(`/accounts/${account}/send`, form)
       sentRef.current = true
+      void dropRemoteDraft()
       if (draftKey) clearDraft(draftKey)
       setDraftSavedAt(null)
       toast.success(
@@ -457,6 +604,7 @@ export function Composer({
                   ? '正在发送…'
                   : 'Ctrl / ⌘ + Enter 发送'}
               {draftSavedAt ? ` · 草稿已保存 ${formatSavedAt(draftSavedAt)}` : ''}
+              {remoteSaved ? ' · 已同步到服务器草稿箱' : ''}
             </span>
           </div>
           <div className="composer__foot-right">

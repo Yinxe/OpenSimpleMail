@@ -4,6 +4,7 @@ import type {
   MessageDetailDto,
   MessagePageDto,
   MoveOutcomeDto,
+  SavedDraftDto,
   SendResultDto,
   TestResultDto,
 } from '@osm/shared'
@@ -45,6 +46,20 @@ export interface OutgoingMessage {
   references?: string[]
 }
 
+/** A draft as it is written into the IMAP \Drafts folder. */
+export interface DraftPayload {
+  to: string
+  cc?: string
+  bcc?: string
+  subject: string
+  text?: string
+  html?: string
+  inReplyTo?: string
+  references?: string[]
+}
+
+export type SavedDraft = SavedDraftDto
+
 export interface FlagUpdate {
   seen?: boolean
   flagged?: boolean
@@ -74,6 +89,8 @@ export interface MailProvider {
   markMailboxRead(mailbox: string): Promise<void>
   move(mailbox: string, uid: number, destination: string): Promise<MoveOutcome>
   moveMany(mailbox: string, uids: number[], destination: string): Promise<MoveOutcome>
+  saveDraft(draft: DraftPayload): Promise<SavedDraft | null>
+  removeDraft(mailbox: string, uid: number): Promise<void>
   delete(mailbox: string, uid: number): Promise<DeleteResult>
   deleteMany(mailbox: string, uids: number[]): Promise<DeleteResult>
   createMailbox(path: string): Promise<void>

@@ -186,3 +186,46 @@ export class SendMessageDto {
   @MaxLength(8000)
   references?: string
 }
+
+export class SaveDraftDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  to?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  cc?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  bcc?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  subject?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500_000)
+  text?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1_000_000)
+  html?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  inReplyTo?: string
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  references?: string[]
+}

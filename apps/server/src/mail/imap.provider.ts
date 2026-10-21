@@ -13,16 +13,19 @@ import {
 import type { FetchMessageObject, ImapFlow, MessageStructureObject } from 'imapflow'
 import type { AddressObject } from 'mailparser'
 import type { AttachmentStorage } from './attachment-storage'
+import { compileDraft } from './draft-composer'
 import type { ImapPool } from './imap.pool'
 import type {
   AttachmentPayload,
   DeleteResult,
+  DraftPayload,
   FlagUpdate,
   ListMessagesOptions,
   MailCredentials,
   MailProvider,
   MoveOutcome,
   OutgoingMessage,
+  SavedDraft,
 } from './mail.types'
 import {
   MessageTooLargeError,
@@ -570,6 +573,51 @@ export class ImapProvider implements MailProvider {
     dropStarredCache(this.creds.accountId)
     dropMailboxCache(this.creds.accountId)
     return { movedTo: destination, uidMap: uidPairs(result) }
+  }
+
+  /**
+   * Append a copy of the draft to the server's Drafts folder. Returns null when
+   * the server lacks UIDPLUS: without the new UID the client could never replace
+   * or delete its own copy, so it is better to keep the draft local only.
+   */
+  async saveDraft(draft: DraftPayload): Promise<SavedDraft | null> {
+    const raw = await compileDraft(this.creds, draft)
+    const saved = await this.pool.withClient(this.creds, async (client) => {
+      if (!client.capabilities.has('UIDPLUS')) return null
+      const list = await client.list()
+      const drafts = list.find(
+        (item) => item.specialUse === '\\Drafts' || /^(drafts|草稿箱?)$/i.test(item.name),
+      )
+      let path = drafts?.path
+      if (!path) {
+        path = 'Drafts'
+        try {
+          await client.mailboxCreate(path)
+        } catch {
+          // Some servers create the folder lazily or reject duplicates.
+        }
+      }
+      const result = await client.append(path, raw, ['\\Draft'])
+      if (!result || typeof result.uid !== 'number') return null
+      return { mailbox: result.destination, uid: result.uid }
+    })
+    if (saved) dropMailboxCache(this.creds.accountId)
+    return saved
+  }
+
+  async removeDraft(mailbox: string, uid: number): Promise<void> {
+    await this.pool.withClient(this.creds, async (client) => {
+      const lock = await client.getMailboxLock(mailbox)
+      try {
+        await client.messageDelete(uid, { uid: true })
+        // CLOSE expunges the message that was just flagged as deleted.
+        await client.mailboxClose()
+      } finally {
+        lock.release()
+      }
+    })
+    this.cache.drop(parsedCacheKey(this.creds.accountId, mailbox, uid))
+    dropMailboxCache(this.creds.accountId)
   }
 
   async delete(mailbox: string, uid: number): Promise<DeleteResult> {

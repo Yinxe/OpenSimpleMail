@@ -8,6 +8,10 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 - Administrator "attachment cache" panel under Settings: it shows how many messages are extracted, the disk usage against the configured budget, and a confirmed "clear cache" action (`GET` / `DELETE /api/admin/attachments`) that drops every extracted attachment without touching mail on the server. Parses already in flight are not written back into the cleared cache.
 
+### Added
+
+- Drafts are mirrored into the account's IMAP Drafts folder: `POST /accounts/:id/drafts` appends a `\Draft` copy (replacing the previous one, so the folder does not collect duplicates) and `DELETE /accounts/:id/drafts/:uid` removes it. Opening a message from Drafts shows "继续编辑", which reopens the composer with its recipients, subject and body; sending or discarding deletes the server copy. Servers without UIDPLUS keep drafts local only.
+
 ### Changed
 
 - Undo archive and delete: `move`/`delete` responses now report the destination mailbox and the source→destination UID map from IMAP `COPYUID`, so the toast can move a message (or a whole batch, grouped per account) back to where it came from. Servers without UIDPLUS simply get no undo entry.

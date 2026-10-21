@@ -22,11 +22,13 @@ import { ImapPool } from './imap.pool'
 import { ImapProvider } from './imap.provider'
 import type {
   AttachmentPayload,
+  DraftPayload,
   FlagUpdate,
   MailProvider,
   MoveOutcome,
   OutgoingAttachment,
   OutgoingMessage,
+  SavedDraft,
 } from './mail.types'
 import { ParsedMessageCache } from './parsed-cache'
 import { SmtpService } from './smtp.service'
@@ -261,6 +263,25 @@ export class MailService {
   ): Promise<MoveOutcome> {
     const provider = await this.provider(userId, accountId)
     return this.run(() => provider.deleteMany(mailbox, uids), '无法批量删除邮件')
+  }
+
+  async saveDraft(
+    userId: string,
+    accountId: string,
+    draft: DraftPayload,
+  ): Promise<SavedDraft | null> {
+    const provider = await this.provider(userId, accountId)
+    return this.run(() => provider.saveDraft(draft), '无法保存草稿到服务器')
+  }
+
+  async removeDraft(
+    userId: string,
+    accountId: string,
+    mailbox: string,
+    uid: number,
+  ): Promise<void> {
+    const provider = await this.provider(userId, accountId)
+    await this.run(() => provider.removeDraft(mailbox, uid), '无法删除服务器草稿')
   }
 
   async createMailbox(userId: string, accountId: string, path: string): Promise<void> {

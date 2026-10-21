@@ -206,6 +206,12 @@ export interface MoveOutcomeDto {
   uidMap?: Array<{ from: number; to: number }>
 }
 
+/** Where the server-side copy of a draft lives, so the client can replace or delete it. */
+export interface SavedDraftDto {
+  mailbox: string
+  uid: number
+}
+
 export interface SendResultDto {
   messageId: string
   accepted: string[]

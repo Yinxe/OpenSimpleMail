@@ -9,6 +9,13 @@
 
 export type ComposeMode = 'new' | 'reply' | 'replyAll' | 'forward'
 
+/** Copy of the draft stored in the account's IMAP Drafts folder. */
+export interface DraftRemote {
+  accountId: string
+  mailbox: string
+  uid: number
+}
+
 export interface ComposeDraft {
   version: 1
   mode: ComposeMode
@@ -20,6 +27,7 @@ export interface ComposeDraft {
   subject: string
   html: string
   savedAt: number
+  remote?: DraftRemote
 }
 
 const KEY_PREFIX = 'osm.draft.v1.'
@@ -62,6 +70,15 @@ export function loadDraft(key: string): ComposeDraft | null {
       store?.removeItem(key)
       return null
     }
+    const remote = draft.remote
+    const validRemote =
+      remote === undefined ||
+      (typeof remote === 'object' &&
+        remote !== null &&
+        typeof remote.accountId === 'string' &&
+        typeof remote.mailbox === 'string' &&
+        typeof remote.uid === 'number')
+    if (!validRemote) delete draft.remote
     return draft as ComposeDraft
   } catch {
     store?.removeItem(key)

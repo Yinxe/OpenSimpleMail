@@ -13,11 +13,13 @@ import type { AccountRow } from '../accounts/account.types'
 import type {
   AttachmentPayload,
   DeleteResult,
+  DraftPayload,
   FlagUpdate,
   ListMessagesOptions,
   MailProvider,
   MoveOutcome,
   OutgoingMessage,
+  SavedDraft,
 } from '../mail/mail.types'
 import { sanitizeEmailHtml } from '../mail/message-sanitizer'
 import type { DemoMessage } from './demo.fixtures'
@@ -218,6 +220,41 @@ export class DemoProvider implements MailProvider {
       movedTo: destination,
       uidMap: messages.map((message) => ({ from: message.uid, to: message.uid })),
     }
+  }
+
+  async saveDraft(draft: DraftPayload): Promise<SavedDraft | null> {
+    const store = this.store
+    const uid = store.nextUid++
+    store.messages.push({
+      uid,
+      mailbox: 'Drafts',
+      subject: draft.subject || '(无主题)',
+      from: [{ name: this.account.name, address: this.account.email }],
+      to: parseAddresses(draft.to),
+      cc: parseAddresses(draft.cc),
+      bcc: parseAddresses(draft.bcc),
+      replyTo: [],
+      date: new Date().toISOString(),
+      flags: ['\\Draft'],
+      text: draft.text ?? '',
+      html: draft.html ?? null,
+      attachments: [],
+      messageId: `<${randomUUID()}@opensimplemail.local>`,
+      inReplyTo: draft.inReplyTo ?? null,
+      references: draft.references ?? [],
+    })
+    this.save()
+    return { mailbox: 'Drafts', uid }
+  }
+
+  async removeDraft(mailbox: string, uid: number): Promise<void> {
+    const store = this.store
+    const next = store.messages.filter(
+      (message) => !(message.uid === uid && message.mailbox === mailbox),
+    )
+    if (next.length === store.messages.length) return
+    store.messages = next
+    this.save()
   }
 
   async delete(_mailbox: string, uid: number): Promise<DeleteResult> {

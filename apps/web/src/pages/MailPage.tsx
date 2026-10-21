@@ -84,6 +84,8 @@ interface DeleteTarget {
 interface ComposeState {
   mode: ComposeMode
   source?: MessageDetailDto
+  draftSource?: MessageDetailDto
+  draftAccountId?: string
   key: string
 }
 
@@ -769,6 +771,14 @@ export function MailPage() {
     return [...groups.values()]
   }
 
+  function isDraftMailbox(accountId: string, mailbox: string): boolean {
+    const index = accounts.findIndex((account) => account.id === accountId)
+    const list = index >= 0 ? (mailboxQueries[index]?.data ?? []) : []
+    const found = list.find((item) => item.path === mailbox)
+    if (found) return found.specialUse === '\\Drafts' || /^(drafts|草稿箱?)$/i.test(found.name)
+    return /^(drafts|草稿箱?)$/i.test(mailbox)
+  }
+
   function archiveMailboxFor(accountId: string): string | null {
     const index = accounts.findIndex((account) => account.id === accountId)
     const mailboxes = index >= 0 ? (mailboxQueries[index]?.data ?? []) : []
@@ -978,6 +988,15 @@ export function MailPage() {
       mode,
       source,
       key: `${mode}-${source?.uid ?? 'new'}-${Date.now()}`,
+    })
+  }
+
+  function editDraft(message: MessageDetailDto, accountId: string) {
+    setCompose({
+      mode: 'new',
+      draftSource: message,
+      draftAccountId: accountId,
+      key: `draft-${message.uid}-${Date.now()}`,
     })
   }
 
@@ -1369,6 +1388,11 @@ export function MailPage() {
               if (!detailAccountId) return
               archiveMessage(message, detailAccountId, destination)
             }}
+            isDraft={Boolean(detailAccountId && isDraftMailbox(detailAccountId, detailMailbox))}
+            onEditDraft={(message) => {
+              if (!detailAccountId) return
+              editDraft(message, detailAccountId)
+            }}
           />
         </>
       )}
@@ -1380,11 +1404,15 @@ export function MailPage() {
           mode={compose.mode}
           accounts={accounts}
           defaultAccountId={
-            detailAccountId && compose.mode !== 'new'
-              ? detailAccountId
-              : (activeAccount?.id ?? accounts[0]?.id ?? null)
+            compose.draftAccountId
+              ? compose.draftAccountId
+              : detailAccountId && compose.mode !== 'new'
+                ? detailAccountId
+                : (activeAccount?.id ?? accounts[0]?.id ?? null)
           }
           source={compose.source}
+          draftSource={compose.draftSource}
+          draftAccountId={compose.draftAccountId}
           onClose={() => setCompose(null)}
           onSent={(accountId) => {
             queryClient.invalidateQueries({ queryKey: ['messages', accountId] })
