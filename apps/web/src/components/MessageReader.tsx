@@ -25,6 +25,8 @@ import {
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { copyToClipboard } from '@/lib/clipboard'
 import { addressLine, displayAddress, formatBytes, formatFullDate } from '@/lib/format'
+import { useI18n } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/locales'
 import {
   type ContentBlock,
   type ContentInline,
@@ -54,6 +56,12 @@ interface MessageReaderProps {
   /** True when the opened message lives in the Drafts folder. */
   isDraft?: boolean
   onEditDraft?: (message: MessageDetailDto) => void
+}
+
+const READER_MODE_KEYS: Record<ReaderMode, MessageKey> = {
+  full: 'reader.mode.full',
+  text: 'reader.mode.text',
+  code: 'reader.mode.code',
 }
 
 const EMPTY_CODE_RESULT: VerificationResult = {
@@ -132,11 +140,13 @@ function EmailFrame({ html, allowImages }: { html: string; allowImages: boolean 
     window.setTimeout(measure, 1200)
   }
 
+  const { t } = useI18n()
+
   return (
     <iframe
       ref={frameRef}
       className="email-frame"
-      title="邮件正文"
+      title={t('reader.bodyAria')}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       srcDoc={buildDocument(html, allowImages)}
       style={{ height }}
@@ -159,8 +169,9 @@ function renderInlines(inlines: ContentInline[]) {
 }
 
 function SimpleBody({ blocks }: { blocks: ContentBlock[] }) {
+  const { t } = useI18n()
   if (blocks.length === 0) {
-    return <p className="reader__empty-body">这封邮件没有可显示的正文。</p>
+    return <p className="reader__empty-body">{t('reader.noBody')}</p>
   }
 
   return (
@@ -217,6 +228,7 @@ function VerificationBody({
   onShowText,
 }: VerificationBodyProps) {
   const toast = useToast()
+  const { t } = useI18n()
   const [copied, setCopied] = useState<string | null>(null)
   const timerRef = useRef<number | null>(null)
 
@@ -229,11 +241,11 @@ function VerificationBody({
   async function copy(code: string) {
     const copiedOk = await copyToClipboard(code)
     if (!copiedOk) {
-      toast.error('复制失败', '请手动选中验证码后复制')
+      toast.error(t('reader.copyFailed'), t('reader.copyFailedBody'))
       return
     }
     setCopied(code)
-    toast.success('验证码已复制', code)
+    toast.success(t('reader.codeCopied'), code)
     if (timerRef.current) window.clearTimeout(timerRef.current)
     timerRef.current = window.setTimeout(() => setCopied(null), 2200)
   }
@@ -245,14 +257,14 @@ function VerificationBody({
         <span className="otp__empty-mark" aria-hidden="true">
           <KeyRound size={24} />
         </span>
-        <h2>没有识别到验证码</h2>
-        <p>这封邮件里没有找到常见的验证码格式。可以回到完整内容手动查看。</p>
+        <h2>{t('reader.otpEmptyTitle')}</h2>
+        <p>{t('reader.otpEmptyBody')}</p>
         <div className="otp__empty-actions">
           <button type="button" className="button button--soft button--sm" onClick={onShowFull}>
-            查看完整内容
+            {t('reader.showFull')}
           </button>
           <button type="button" className="button button--ghost button--sm" onClick={onShowText}>
-            查看简约文字
+            {t('reader.showSimple')}
           </button>
         </div>
       </div>
@@ -274,7 +286,7 @@ function VerificationBody({
           <span className="otp__icon" aria-hidden="true">
             <KeyRound size={17} />
           </span>
-          <span className="otp__label">验证码</span>
+          <span className="otp__label">{t('reader.otpLabel')}</span>
           {result.expiry ? (
             <span className="otp__expiry">
               <Clock3 size={12} aria-hidden="true" />
@@ -292,33 +304,33 @@ function VerificationBody({
           aria-live="polite"
         >
           {copied === code ? <Check size={16} /> : <Copy size={16} />}
-          {copied === code ? '已复制' : '复制验证码'}
+          {copied === code ? t('reader.copied') : t('reader.copyCode')}
         </button>
 
-        {/[A-Za-z]/.test(code) ? <p className="otp__case">含字母，复制时请区分大小写</p> : null}
+        {/[A-Za-z]/.test(code) ? <p className="otp__case">{t('reader.caseHint')}</p> : null}
 
         {result.context ? <p className="otp__context">{result.context}</p> : null}
 
         <div className="otp__foot">
           <span className="otp__sender" title={senderAddress}>
-            来自 {senderName}
+            {t('reader.from', { sender: senderName })}
           </span>
           <button type="button" onClick={onShowFull}>
-            查看完整内容
+            {t('reader.showFull')}
           </button>
         </div>
       </div>
 
       {alternatives.length > 0 ? (
         <div className="otp__alternatives">
-          <span>其他候选</span>
+          <span>{t('reader.otherCandidates')}</span>
           {alternatives.map((candidate) => (
             <button
               key={candidate.code}
               type="button"
               className="otp__alt"
               onClick={() => copy(candidate.code)}
-              title={`复制 ${candidate.code}`}
+              title={t('reader.copyCandidate', { code: candidate.code })}
             >
               <code>{candidate.code}</code>
               <Copy size={12} aria-hidden="true" />
@@ -329,7 +341,7 @@ function VerificationBody({
 
       <p className="otp__safe">
         <ShieldCheck size={12} aria-hidden="true" />
-        验证码仅用于本次验证，请勿转发给他人。
+        {t('reader.otpNote')}
       </p>
     </div>
   )
@@ -352,6 +364,7 @@ export function MessageReader({
   isDraft = false,
   onEditDraft,
 }: MessageReaderProps) {
+  const { t } = useI18n()
   const [allowImages, setAllowImages] = useState(defaultAllowImages)
   const [mode, setMode] = useState<ReaderMode>(readReaderMode)
 
@@ -380,7 +393,7 @@ export function MessageReader({
       <section className="reader reader--loading">
         <div className="reader__loading">
           <Spinner size={22} />
-          <span>正在打开邮件…</span>
+          <span>{t('reader.loading')}</span>
         </div>
       </section>
     )
@@ -393,18 +406,18 @@ export function MessageReader({
           <span className="reader-empty__mark">
             <Mail size={30} />
           </span>
-          <h2>选一封邮件，慢慢读</h2>
-          <p>左侧列表里点开任意一封邮件，这里会显示完整内容。</p>
+          <h2>{t('reader.placeholderTitle')}</h2>
+          <p>{t('reader.placeholderBody')}</p>
           <div className="reader-empty__keys">
             <span>
               <kbd>J</kbd>
-              <kbd>K</kbd> 切换邮件
+              <kbd>K</kbd> {t('reader.shortcutSwitch')}
             </span>
             <span>
-              <kbd>C</kbd> 写邮件
+              <kbd>C</kbd> {t('reader.shortcutCompose')}
             </span>
             <span>
-              <kbd>/</kbd> 搜索
+              <kbd>/</kbd> {t('reader.shortcutSearch')}
             </span>
           </div>
         </div>
@@ -413,7 +426,7 @@ export function MessageReader({
   }
 
   const sender = message.from[0]
-  const senderName = sender ? displayAddress(sender) : '未知发件人'
+  const senderName = sender ? displayAddress(sender) : t('reader.unknownSender')
   const blockedImages = message.html !== null && hasRemoteImages(message.html) && !allowImages
   const attachments = message.attachments.filter((item) => !item.inline)
   const attachmentBase = account
@@ -423,13 +436,13 @@ export function MessageReader({
   const codeScore = codeResult.candidates[0]?.score ?? 0
   const modeHint =
     mode === 'text'
-      ? '已去除图片与样式'
+      ? t('reader.modeTextHint')
       : mode === 'code'
         ? codeResult.code
           ? codeScore >= 12
-            ? '已自动识别'
-            : '已识别，请核对'
-          : '未识别到验证码'
+            ? t('reader.detected')
+            : t('reader.detectedCheck')
+          : t('reader.notDetected')
         : ''
 
   return (
@@ -440,7 +453,7 @@ export function MessageReader({
             type="button"
             className="icon-button reader__back"
             onClick={onClose}
-            aria-label="返回列表"
+            aria-label={t('reader.back')}
           >
             <ArrowLeft size={17} />
           </button>
@@ -448,8 +461,8 @@ export function MessageReader({
             type="button"
             className="icon-button"
             onClick={() => onToggleRead(message)}
-            title={message.unread ? '标为已读' : '标为未读'}
-            aria-label={message.unread ? '标为已读' : '标为未读'}
+            title={message.unread ? t('mail.row.markRead') : t('mail.row.markUnread')}
+            aria-label={message.unread ? t('mail.row.markRead') : t('mail.row.markUnread')}
           >
             {message.unread ? <MailOpen size={16} /> : <Mail size={16} />}
           </button>
@@ -457,8 +470,8 @@ export function MessageReader({
             type="button"
             className={`icon-button ${message.starred ? 'is-starred' : ''}`}
             onClick={() => onStar(message)}
-            title={message.starred ? '取消收藏' : '收藏（可在左侧「收藏」查看）'}
-            aria-label={message.starred ? '取消收藏' : '收藏'}
+            title={message.starred ? t('mail.row.unstar') : t('mail.row.starHint')}
+            aria-label={message.starred ? t('mail.row.unstar') : t('mail.row.star')}
             aria-pressed={message.starred}
           >
             <Star size={16} fill={message.starred ? 'currentColor' : 'none'} />
@@ -468,8 +481,8 @@ export function MessageReader({
               type="button"
               className="icon-button"
               onClick={() => onArchive(message, archivePath)}
-              title="归档"
-              aria-label="归档"
+              title={t('mail.row.archive')}
+              aria-label={t('mail.row.archive')}
             >
               <Archive size={16} />
             </button>
@@ -478,8 +491,8 @@ export function MessageReader({
             type="button"
             className="icon-button icon-button--danger"
             onClick={() => onDelete(message)}
-            title="删除"
-            aria-label="删除"
+            title={t('mail.row.delete')}
+            aria-label={t('mail.row.delete')}
           >
             <Trash2 size={16} />
           </button>
@@ -491,7 +504,7 @@ export function MessageReader({
               className="button button--soft button--sm"
               onClick={() => onEditDraft?.(message)}
             >
-              <Pencil size={15} /> 继续编辑
+              <Pencil size={15} /> {t('reader.editDraft')}
             </button>
           ) : (
             <>
@@ -500,22 +513,22 @@ export function MessageReader({
                 className="button button--soft button--sm"
                 onClick={() => onReply(message)}
               >
-                <Reply size={15} /> 回复
+                <Reply size={15} /> {t('reader.reply')}
               </button>
               <button
                 type="button"
                 className="button button--ghost button--sm"
                 onClick={() => onReplyAll(message)}
-                title="回复发件人和所有收件人（A）"
+                title={t('reader.replyAllTitle')}
               >
-                <ReplyAll size={15} /> 全部回复
+                <ReplyAll size={15} /> {t('reader.replyAll')}
               </button>
               <button
                 type="button"
                 className="button button--ghost button--sm"
                 onClick={() => onForward(message)}
               >
-                <Forward size={15} /> 转发
+                <Forward size={15} /> {t('reader.forward')}
               </button>
             </>
           )}
@@ -525,7 +538,7 @@ export function MessageReader({
       <div className="reader__scroll">
         <article className="reader__content">
           <div className="reader__subject-row">
-            <h1>{message.subject.trim() || '(无主题)'}</h1>
+            <h1>{message.subject.trim() || t('composer.noSubject')}</h1>
             {message.starred ? (
               <Star size={18} className="reader__star" fill="currentColor" />
             ) : null}
@@ -539,8 +552,12 @@ export function MessageReader({
                 {sender?.name ? <span>&lt;{sender.address}&gt;</span> : null}
               </div>
               <div className="reader__recipients">
-                发送至 {addressLine(message.to) || '未填写'}
-                {message.cc.length > 0 ? ` · 抄送 ${addressLine(message.cc)}` : ''}
+                {t('reader.sentTo', {
+                  recipients: addressLine(message.to) || t('reader.notFilled'),
+                })}
+                {message.cc.length > 0
+                  ? t('reader.cc', { recipients: addressLine(message.cc) })
+                  : ''}
               </div>
             </div>
             <time className="reader__date" dateTime={message.date}>
@@ -550,12 +567,12 @@ export function MessageReader({
 
           {message.replyTo.length > 0 && message.replyTo[0]?.address !== sender?.address ? (
             <p className="reader__reply-to">
-              回复至 <strong>{addressLine(message.replyTo)}</strong>
+              <strong>{t('reader.replyTo', { address: addressLine(message.replyTo) })}</strong>
             </p>
           ) : null}
 
           <div className="reader__viewbar">
-            <div className="reader-modes" role="tablist" aria-label="正文渲染方式">
+            <div className="reader-modes" role="tablist" aria-label={t('reader.modesAria')}>
               {READER_MODES.map((item) => {
                 const Icon =
                   item.value === 'full'
@@ -575,11 +592,11 @@ export function MessageReader({
                     onClick={() => setMode(item.value)}
                   >
                     <Icon size={14} aria-hidden="true" />
-                    <span>{item.label}</span>
+                    <span>{t(READER_MODE_KEYS[item.value])}</span>
                     {item.value === 'code' && codeResult.code ? (
                       <>
                         <span className="reader-mode__dot" aria-hidden="true" />
-                        <span className="sr-only">已识别到验证码</span>
+                        <span className="sr-only">{t('reader.detectedSr')}</span>
                       </>
                     ) : null}
                   </button>
@@ -592,9 +609,9 @@ export function MessageReader({
           {mode === 'full' && blockedImages ? (
             <div className="reader__notice">
               <ImageOff size={16} />
-              <span>远程图片已被拦截，以避免发件人追踪你的阅读行为。</span>
+              <span>{t('reader.remoteBlocked')}</span>
               <button type="button" onClick={() => setAllowImages(true)}>
-                显示图片
+                {t('reader.showImages')}
               </button>
             </div>
           ) : null}
@@ -603,7 +620,7 @@ export function MessageReader({
             <div className="attachments">
               <div className="attachments__head">
                 <Paperclip size={14} />
-                {attachments.length} 个附件
+                {t('reader.attachments', { count: attachments.length })}
               </div>
               <div className="attachments__list">
                 {attachments.map((attachment) => (
@@ -637,7 +654,7 @@ export function MessageReader({
               message.html ? (
                 <EmailFrame html={message.html} allowImages={allowImages} />
               ) : (
-                <pre className="reader__text">{message.text ?? '(这封邮件没有可显示的正文)'}</pre>
+                <pre className="reader__text">{message.text ?? t('reader.noBodyPlain')}</pre>
               )
             ) : mode === 'text' ? (
               <SimpleBody blocks={simpleBlocks} />

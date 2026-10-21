@@ -16,6 +16,8 @@ import {
   Star,
   Trash2,
 } from 'lucide-react'
+import { useI18n } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/locales'
 import { Avatar } from './Avatar'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
@@ -51,7 +53,21 @@ const SPECIAL_ORDER = [
   '\\Trash',
 ]
 
-export function folderLabel(folder: MailboxDto): string {
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string
+
+const FOLDER_KEYS: Record<string, MessageKey> = {
+  '\\Inbox': 'folder.inbox',
+  '\\Flagged': 'folder.starred',
+  '\\Drafts': 'folder.drafts',
+  '\\Sent': 'folder.sent',
+  '\\Archive': 'folder.archive',
+  '\\Junk': 'folder.junk',
+  '\\Trash': 'folder.trash',
+}
+
+export function folderLabel(folder: MailboxDto, t?: Translate): string {
+  const key = folder.specialUse ? FOLDER_KEYS[folder.specialUse] : undefined
+  if (key && t) return t(key)
   switch (folder.specialUse) {
     case '\\Inbox':
       return '收件箱'
@@ -118,6 +134,7 @@ export function Sidebar({
   onSettings,
   onLogout,
 }: SidebarProps) {
+  const { t } = useI18n()
   const sortedMailboxes = [...mailboxes]
     // The starred view is a first-class entry above the account list, so the
     // provider's own `\Flagged` folder would only duplicate it.
@@ -136,7 +153,7 @@ export function Sidebar({
 
       <button type="button" className="compose-button" onClick={onCompose}>
         <PenLine size={17} />
-        写邮件
+        {t('sidebar.compose')}
       </button>
 
       <nav className="sidebar__nav">
@@ -148,7 +165,7 @@ export function Sidebar({
           <span className="nav-item__icon">
             <MailPlus size={17} />
           </span>
-          <span className="nav-item__label">全部收件箱</span>
+          <span className="nav-item__label">{t('sidebar.allInbox')}</span>
           <span className="nav-item__count">
             {Object.values(accountUnread).reduce((sum, value) => sum + value, 0) || ''}
           </span>
@@ -157,25 +174,25 @@ export function Sidebar({
           type="button"
           className={`nav-item nav-item--starred ${starredActive ? 'is-active' : ''}`}
           onClick={onSelectStarred}
-          title="收藏的邮件会集中在这里"
+          title={t('sidebar.starredHint')}
         >
           <span className="nav-item__icon">
             <Star size={17} />
           </span>
-          <span className="nav-item__label">收藏</span>
+          <span className="nav-item__label">{t('folder.starred')}</span>
           <span className="nav-item__count">{starredCount || ''}</span>
         </button>
       </nav>
 
       <div className="sidebar__section">
         <div className="sidebar__section-head">
-          <span>邮箱账户</span>
+          <span>{t('sidebar.accounts')}</span>
           <button
             type="button"
             className="sidebar__add"
             onClick={onAddAccount}
-            title="添加邮箱"
-            aria-label="添加邮箱"
+            title={t('sidebar.addAccount')}
+            aria-label={t('sidebar.addAccount')}
           >
             <Plus size={14} />
           </button>
@@ -203,7 +220,7 @@ export function Sidebar({
           })}
           {accounts.length === 0 ? (
             <button type="button" className="sidebar__empty" onClick={onAddAccount}>
-              添加你的第一个邮箱
+              {t('sidebar.addFirstAccount')}
             </button>
           ) : null}
         </div>
@@ -211,14 +228,14 @@ export function Sidebar({
 
       <div className="sidebar__section sidebar__section--folders">
         <div className="sidebar__section-head">
-          <span>文件夹</span>
+          <span>{t('sidebar.folders')}</span>
           {activeAccountId ? (
             <button
               type="button"
               className="sidebar__add"
               onClick={onCreateFolder}
-              title="新建文件夹"
-              aria-label="新建文件夹"
+              title={t('sidebar.newFolder')}
+              aria-label={t('sidebar.newFolder')}
             >
               <Plus size={14} />
             </button>
@@ -246,16 +263,16 @@ export function Sidebar({
                       <button
                         type="button"
                         onClick={() => onRenameFolder(folder)}
-                        title="重命名文件夹"
-                        aria-label={`重命名 ${folderLabel(folder)}`}
+                        title={t('sidebar.renameFolder')}
+                        aria-label={t('sidebar.renameFolderName', { name: folderLabel(folder, t) })}
                       >
                         <Pencil size={13} />
                       </button>
                       <button
                         type="button"
                         onClick={() => onDeleteFolder(folder)}
-                        title="删除文件夹"
-                        aria-label={`删除 ${folderLabel(folder)}`}
+                        title={t('sidebar.deleteFolder')}
+                        aria-label={t('sidebar.deleteFolderName', { name: folderLabel(folder, t) })}
                       >
                         <Trash2 size={13} />
                       </button>
@@ -265,8 +282,8 @@ export function Sidebar({
                       <button
                         type="button"
                         onClick={() => onEmptyFolder(folder)}
-                        title="清空废纸篓"
-                        aria-label="清空废纸篓"
+                        title={t('sidebar.emptyTrash')}
+                        aria-label={t('sidebar.emptyTrash')}
                       >
                         <Eraser size={13} />
                       </button>
@@ -275,12 +292,12 @@ export function Sidebar({
                 </div>
               )
             })}
-            {sortedMailboxes.length === 0 ? <p className="sidebar__hint">正在读取文件夹…</p> : null}
+            {sortedMailboxes.length === 0 ? (
+              <p className="sidebar__hint">{t('sidebar.loadingFolders')}</p>
+            ) : null}
           </div>
         ) : (
-          <p className="sidebar__hint">
-            选择上方某个邮箱查看它的文件夹；全部收件箱会按时间合并所有账户的来信。
-          </p>
+          <p className="sidebar__hint">{t('sidebar.folderHint')}</p>
         )}
       </div>
 
@@ -298,8 +315,8 @@ export function Sidebar({
             type="button"
             className="icon-button icon-button--ghost"
             onClick={onSettings}
-            title="设置"
-            aria-label="设置"
+            title={t('sidebar.settings')}
+            aria-label={t('sidebar.settings')}
           >
             <Settings size={17} />
           </button>
@@ -307,8 +324,8 @@ export function Sidebar({
             type="button"
             className="icon-button icon-button--ghost"
             onClick={onLogout}
-            title="退出登录"
-            aria-label="退出登录"
+            title={t('sidebar.logout')}
+            aria-label={t('sidebar.logout')}
           >
             <LogOut size={17} />
           </button>

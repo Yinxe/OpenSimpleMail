@@ -32,6 +32,8 @@ import { useAuth } from '@/lib/auth'
 import { isDeleteConfirmSkipped, setDeleteConfirmSkipped } from '@/lib/deleteGuard'
 import type { ComposeMode } from '@/lib/drafts'
 import { displayAddress } from '@/lib/format'
+import { useI18n } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/locales'
 import { useToast } from '@/lib/toast'
 import { useNewMailNotifications, useUnreadBadge } from '@/lib/unread'
 
@@ -118,6 +120,7 @@ function deleteDestination(
   accounts: AccountDto[],
   mailboxQueries: { data?: MailboxDto[] }[],
   target: DeleteTarget | null,
+  t?: (key: MessageKey, vars?: Record<string, string | number>) => string,
 ): { label: string | null; known: boolean } {
   if (!target) return { label: null, known: false }
   const index = accounts.findIndex((account) => account.id === target.accountId)
@@ -130,13 +133,14 @@ function deleteDestination(
       /^(trash|deleted items|已删除|废纸篓)$/i.test(mailbox.name),
   )
   if (!trash || trash.path === target.mailbox) return { label: null, known: true }
-  return { label: folderLabel(trash), known: true }
+  return { label: folderLabel(trash, t), known: true }
 }
 
 export function MailPage() {
   const { user, config, preferences, logout } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
+  const { t } = useI18n()
   const queryClient = useQueryClient()
   const [params, setParams] = useSearchParams()
   const searchRef = useRef<HTMLInputElement>(null)
@@ -535,7 +539,7 @@ export function MailPage() {
       const movedFolder = movedTo
         ? (mailboxQueries[accountIndex]?.data ?? []).find((item) => item.path === movedTo)
         : undefined
-      const movedLabel = movedTo ? (movedFolder ? folderLabel(movedFolder) : movedTo) : null
+      const movedLabel = movedTo ? (movedFolder ? folderLabel(movedFolder, t) : movedTo) : null
       const undo = undoGroupsFrom(vars.accountId, vars.mailbox, result)
       toast.success(
         '邮件已删除',
@@ -674,7 +678,7 @@ export function MailPage() {
 
   async function deleteFolder(folder: MailboxDto) {
     if (!activeAccount) return
-    if (!window.confirm(`删除文件夹「${folderLabel(folder)}」及其中所有邮件？`)) return
+    if (!window.confirm(`删除文件夹「${folderLabel(folder, t)}」及其中所有邮件？`)) return
     setFolderBusy(true)
     try {
       await api.delete(
@@ -685,7 +689,7 @@ export function MailPage() {
       if (mailboxParam === folder.path) {
         update({ mailbox: DEFAULT_MAILBOX, uid: null, page: null })
       }
-      toast.success('文件夹已删除', folderLabel(folder))
+      toast.success('文件夹已删除', folderLabel(folder, t))
     } catch (error) {
       toast.error('删除文件夹失败', errorMessage(error))
     } finally {
@@ -695,7 +699,7 @@ export function MailPage() {
 
   async function emptyFolder(folder: MailboxDto) {
     if (!activeAccount) return
-    if (!window.confirm(`清空「${folderLabel(folder)}」？此操作不可撤销。`)) return
+    if (!window.confirm(`清空「${folderLabel(folder, t)}」？此操作不可撤销。`)) return
     setFolderBusy(true)
     try {
       await api.post(`/accounts/${activeAccount.id}/mailboxes/empty`, {
@@ -703,7 +707,7 @@ export function MailPage() {
       })
       queryClient.invalidateQueries({ queryKey: ['mailboxes', activeAccount.id] })
       queryClient.invalidateQueries({ queryKey: ['messages'] })
-      toast.success('文件夹已清空', folderLabel(folder))
+      toast.success('文件夹已清空', folderLabel(folder, t))
     } catch (error) {
       toast.error('清空文件夹失败', errorMessage(error))
     } finally {
@@ -1032,7 +1036,7 @@ export function MailPage() {
     : unified
       ? '全部收件箱'
       : currentMailbox
-        ? folderLabel(currentMailbox)
+        ? folderLabel(currentMailbox, t)
         : mailboxParam
   const listSubtitle = starred
     ? unified
@@ -1203,7 +1207,7 @@ export function MailPage() {
 
   const noAccounts = !accountsQuery.isLoading && accounts.length === 0
   const reading = Boolean(uidParam)
-  const pendingDestination = deleteDestination(accounts, mailboxQueries, pendingDelete)
+  const pendingDestination = deleteDestination(accounts, mailboxQueries, pendingDelete, t)
 
   return (
     <div
