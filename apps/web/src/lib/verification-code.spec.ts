@@ -9,7 +9,7 @@ describe('findVerificationCode', () => {
   it('extracts a Chinese verification code and its expiry', () => {
     const result = find({ text: '你的登录验证码是 482913，10 分钟内有效。请勿转发。' })
     expect(result.code).toBe('482913')
-    expect(result.expiry).toBe('10 分钟内有效')
+    expect(result.expiry).toEqual({ kind: 'duration', amount: 10, unit: 'minutes' })
     expect(result.context).toContain('482913')
   })
 
@@ -19,7 +19,7 @@ describe('findVerificationCode', () => {
       text: 'Your verification code is 482913. It expires in 10 minutes.',
     })
     expect(result.code).toBe('482913')
-    expect(result.expiry).toBe('10 分钟内有效')
+    expect(result.expiry).toEqual({ kind: 'duration', amount: 10, unit: 'minutes' })
   })
 
   it('accepts the shorter "code is" phrasing', () => {
@@ -42,7 +42,7 @@ describe('findVerificationCode', () => {
   it('preserves the exact case of alphanumeric codes', () => {
     const result = find({ text: '您的验证码是：090b51，15 分钟后失效。' })
     expect(result.code).toBe('090b51')
-    expect(result.expiry).toBe('15 分钟内有效')
+    expect(result.expiry).toEqual({ kind: 'duration', amount: 15, unit: 'minutes' })
   })
 
   it('uses the body casing when the subject disagrees', () => {
@@ -79,7 +79,7 @@ describe('findVerificationCode', () => {
 如果不是您本人操作，请忽略此邮件。`,
     })
     expect(result.code).toBe('811818')
-    expect(result.expiry).toBe('15 分钟内有效')
+    expect(result.expiry).toEqual({ kind: 'duration', amount: 15, unit: 'minutes' })
     expect(result.candidates.every((candidate) => /^\d+$/.test(candidate.code))).toBe(true)
     expect(result.context).not.toContain('yinx1423')
   })

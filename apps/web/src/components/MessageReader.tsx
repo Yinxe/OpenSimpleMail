@@ -35,7 +35,11 @@ import {
 } from '@/lib/message-content'
 import { READER_MODES, type ReaderMode, readReaderMode, writeReaderMode } from '@/lib/reader-mode'
 import { useToast } from '@/lib/toast'
-import { findVerificationCode, type VerificationResult } from '@/lib/verification-code'
+import {
+  findVerificationCode,
+  type VerificationExpiry,
+  type VerificationResult,
+} from '@/lib/verification-code'
 import { Avatar } from './Avatar'
 import { Spinner } from './Spinner'
 
@@ -56,6 +60,16 @@ interface MessageReaderProps {
   /** True when the opened message lives in the Drafts folder. */
   isDraft?: boolean
   onEditDraft?: (message: MessageDetailDto) => void
+}
+
+function expiryText(
+  expiry: VerificationExpiry,
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+): string {
+  if (expiry.kind === 'time') return t('reader.expiryTime', { time: expiry.time })
+  return t(expiry.unit === 'minutes' ? 'reader.expiryMinutes' : 'reader.expiryHours', {
+    count: expiry.amount,
+  })
 }
 
 const READER_MODE_KEYS: Record<ReaderMode, MessageKey> = {
@@ -290,7 +304,7 @@ function VerificationBody({
           {result.expiry ? (
             <span className="otp__expiry">
               <Clock3 size={12} aria-hidden="true" />
-              {result.expiry}
+              {expiryText(result.expiry, t)}
             </span>
           ) : null}
         </div>

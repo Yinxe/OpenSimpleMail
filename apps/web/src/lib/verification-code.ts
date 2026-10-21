@@ -16,11 +16,16 @@ export interface VerificationCandidate {
   source: VerificationSource
 }
 
+/** Structured expiry so the reader can render it in the active language. */
+export type VerificationExpiry =
+  | { kind: 'duration'; amount: number; unit: 'minutes' | 'hours' }
+  | { kind: 'time'; time: string }
+
 export interface VerificationResult {
   code: string | null
   candidates: VerificationCandidate[]
   context: string | null
-  expiry: string | null
+  expiry: VerificationExpiry | null
   source: VerificationSource | null
 }
 
@@ -308,18 +313,18 @@ function scoreSeed(
   return score
 }
 
-function findExpiry(text: string): string | null {
+function findExpiry(text: string): VerificationExpiry | null {
   for (const entry of EXPIRY_PATTERNS) {
     const match = entry.pattern.exec(text)
     if (!match) continue
     if (entry.absolute) {
-      return `${match[1].replace('：', ':')} 前有效`
+      return { kind: 'time', time: (match[1] ?? '').replace('：', ':') }
     }
     const amount = Number(match[1])
     if (!Number.isFinite(amount) || amount <= 0) continue
     const unit = match[2] ?? ''
-    if (/^(分钟|分|minute|min)/i.test(unit)) return `${amount} 分钟内有效`
-    return `${amount} 小时内有效`
+    const minutes = /^(分钟|分|minute|min)/i.test(unit)
+    return { kind: 'duration', amount, unit: minutes ? 'minutes' : 'hours' }
   }
   return null
 }
