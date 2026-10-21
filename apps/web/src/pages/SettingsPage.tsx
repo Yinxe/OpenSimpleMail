@@ -39,18 +39,29 @@ import { useAuth } from '@/lib/auth'
 import { isDeleteConfirmSkipped, setDeleteConfirmSkipped } from '@/lib/deleteGuard'
 import { formatBytes } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/locales'
 import { type ThemeChoice, useTheme } from '@/lib/theme'
 import { useToast } from '@/lib/toast'
 
 const THEME_OPTIONS: {
   value: ThemeChoice
-  label: string
-  description: string
+  labelKey: MessageKey
+  descKey: MessageKey
   icon: typeof Sun
 }[] = [
-  { value: 'light', label: '浅色', description: '温暖纸张质感', icon: Sun },
-  { value: 'dark', label: '深色', description: '夜间阅读更舒适', icon: Moon },
-  { value: 'system', label: '跟随系统', description: '随系统外观自动切换', icon: Monitor },
+  {
+    value: 'light',
+    labelKey: 'settings.themeLight',
+    descKey: 'settings.themeLightDesc',
+    icon: Sun,
+  },
+  { value: 'dark', labelKey: 'settings.themeDark', descKey: 'settings.themeDarkDesc', icon: Moon },
+  {
+    value: 'system',
+    labelKey: 'settings.themeSystem',
+    descKey: 'settings.themeSystemDesc',
+    icon: Monitor,
+  },
 ]
 
 export function SettingsPage() {
@@ -113,9 +124,9 @@ export function SettingsPage() {
       })
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] })
       void refreshConfig()
-      toast.success('系统设置已保存')
+      toast.success(t('settings.toastSystemSaved'))
     },
-    onError: (error) => toast.error('保存系统设置失败', errorMessage(error)),
+    onError: (error) => toast.error(t('settings.toastSystemFailed'), errorMessage(error)),
   })
 
   const attachmentCache = useQuery({
@@ -129,14 +140,14 @@ export function SettingsPage() {
     onSuccess: (data) => {
       queryClient.setQueryData(['admin-attachments'], data)
       setClearCacheOpen(false)
-      toast.success('附件缓存已清理')
+      toast.success(t('settings.toastCacheCleared'))
     },
-    onError: (error) => toast.error('清理附件缓存失败', errorMessage(error)),
+    onError: (error) => toast.error(t('settings.toastCacheFailed'), errorMessage(error)),
   })
 
   useEffect(() => {
-    document.title = `设置 · ${config?.siteName ?? 'OpenSimpleMail'}`
-  }, [config?.siteName])
+    document.title = `${t('settings.title')} · ${config?.siteName ?? 'OpenSimpleMail'}`
+  }, [config?.siteName, t])
 
   const deleteMutation = useMutation({
     mutationFn: (accountId: string) => api.delete(`/accounts/${accountId}`),
@@ -145,18 +156,21 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] })
       queryClient.invalidateQueries({ queryKey: ['messages'] })
-      toast.success('邮箱已移除', account?.email)
+      toast.success(t('settings.toastAccountRemoved'), account?.email)
     },
-    onError: (error) => toast.error('移除失败', errorMessage(error)),
+    onError: (error) => toast.error(t('settings.toastRemoveFailed'), errorMessage(error)),
   })
 
   async function testAccount(account: AccountDto) {
     setTestingId(account.id)
     try {
       const result = await api.post<TestResultDto>(`/accounts/${account.id}/test`)
-      toast.success('连接正常', `IMAP 与 SMTP 均可用，耗时 ${result.durationMs} ms`)
+      toast.success(
+        t('settings.toastConnected'),
+        t('settings.toastConnectedBody', { ms: result.durationMs }),
+      )
     } catch (error) {
-      toast.error('连接失败', errorMessage(error))
+      toast.error(t('settings.toastConnectFailed'), errorMessage(error))
     } finally {
       setTestingId(null)
     }
@@ -164,7 +178,7 @@ export function SettingsPage() {
 
   function removeAccount(account: AccountDto) {
     const confirmed = window.confirm(
-      `确定移除「${account.name} <${account.email}>」吗？\n\n这只会删除本应用中的账户配置，不会影响邮箱服务器上的任何邮件。`,
+      t('settings.toastRemoveConfirm', { name: account.name, email: account.email }),
     )
     if (confirmed) deleteMutation.mutate(account.id)
   }
@@ -173,9 +187,9 @@ export function SettingsPage() {
     setSavingPrefs(true)
     try {
       await updatePreferences(prefForm)
-      toast.success('使用偏好已保存')
+      toast.success(t('settings.toastPrefsSaved'))
     } catch (error) {
-      toast.error('保存使用偏好失败', errorMessage(error))
+      toast.error(t('settings.toastPrefsFailed'), errorMessage(error))
     } finally {
       setSavingPrefs(false)
     }
@@ -187,19 +201,22 @@ export function SettingsPage() {
       return
     }
     if (typeof Notification === 'undefined') {
-      toast.error('当前浏览器不支持桌面通知')
+      toast.error(t('settings.toastNoNotifications'))
       return
     }
     try {
       const permission =
         Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
       if (permission !== 'granted') {
-        toast.error('未获得通知权限', '请在浏览器的站点设置中允许通知后重试')
+        toast.error(
+          t('settings.toastNotificationDenied'),
+          t('settings.toastNotificationDeniedBody'),
+        )
         return
       }
       setPrefForm((current) => ({ ...current, desktopNotifications: true }))
     } catch {
-      toast.error('无法请求通知权限')
+      toast.error(t('settings.toastNotificationRequestFailed'))
     }
   }
 
@@ -216,7 +233,7 @@ export function SettingsPage() {
             className="button button--ghost button--sm"
             onClick={() => navigate('/app')}
           >
-            <ArrowLeft size={16} /> 返回邮箱
+            <ArrowLeft size={16} /> {t('settings.back')}
           </button>
           <Logo />
         </div>
@@ -236,14 +253,14 @@ export function SettingsPage() {
             <h2>{user.name}</h2>
             <p>{user.email}</p>
             {user.isDemo ? (
-              <span className="badge badge--warm">演示工作区</span>
+              <span className="badge badge--warm">{t('settings.demoWorkspace')}</span>
             ) : user.isAdmin ? (
               <span className="badge badge--warm">
-                <ShieldCheck size={13} /> 管理员
+                <ShieldCheck size={13} /> {t('settings.admin')}
               </span>
             ) : (
               <span className="badge">
-                <BadgeCheck size={13} /> 本地账号
+                <BadgeCheck size={13} /> {t('settings.localAccount')}
               </span>
             )}
           </div>
@@ -255,7 +272,7 @@ export function SettingsPage() {
               navigate('/login', { replace: true })
             }}
           >
-            <LogOut size={15} /> 退出登录
+            <LogOut size={15} /> {t('settings.logout')}
           </button>
         </section>
 
@@ -273,14 +290,14 @@ export function SettingsPage() {
                 setDialogOpen(true)
               }}
             >
-              <Plus size={15} /> 添加邮箱
+              <Plus size={15} /> {t('settings.addAccount')}
             </button>
           </div>
 
           <div className="account-cards">
             {accountsQuery.isLoading ? (
               <div className="settings-loading">
-                <Spinner size={20} /> 正在读取账户…
+                <Spinner size={20} /> {t('settings.loadingAccounts')}
               </div>
             ) : null}
 
@@ -291,13 +308,13 @@ export function SettingsPage() {
                   <div className="account-card__title">
                     <h3>{account.name}</h3>
                     {account.kind === 'demo' ? (
-                      <span className="badge badge--warm">演示</span>
+                      <span className="badge badge--warm">{t('settings.demoBadge')}</span>
                     ) : null}
                   </div>
                   <p className="account-card__email">{account.email}</p>
                   <p className="account-card__servers">
                     {account.kind === 'demo'
-                      ? '内置示例数据，不会连接外部服务器'
+                      ? t('settings.demoServer')
                       : `IMAP ${account.imap.host}:${account.imap.port} · SMTP ${account.smtp.host}:${account.smtp.port}`}
                   </p>
                 </div>
@@ -309,7 +326,7 @@ export function SettingsPage() {
                     disabled={testingId === account.id || account.kind === 'demo'}
                   >
                     {testingId === account.id ? <Spinner /> : <FlaskConical size={14} />}
-                    测试
+                    {t('settings.test')}
                   </button>
                   {account.kind !== 'demo' ? (
                     <>
@@ -320,8 +337,8 @@ export function SettingsPage() {
                           setEditing(account)
                           setDialogOpen(true)
                         }}
-                        title="编辑"
-                        aria-label="编辑"
+                        title={t('settings.edit')}
+                        aria-label={t('settings.edit')}
                       >
                         <Pencil size={15} />
                       </button>
@@ -329,8 +346,8 @@ export function SettingsPage() {
                         type="button"
                         className="icon-button icon-button--danger"
                         onClick={() => removeAccount(account)}
-                        title="移除"
-                        aria-label="移除"
+                        title={t('settings.remove')}
+                        aria-label={t('settings.remove')}
                         disabled={deleteMutation.isPending}
                       >
                         <Trash2 size={15} />
@@ -343,7 +360,7 @@ export function SettingsPage() {
 
             {!accountsQuery.isLoading && accounts.length === 0 ? (
               <div className="settings-empty">
-                <p>还没有添加邮箱账户。</p>
+                <p>{t('settings.noAccounts')}</p>
                 <button
                   type="button"
                   className="button button--soft button--sm"
@@ -352,7 +369,7 @@ export function SettingsPage() {
                     setDialogOpen(true)
                   }}
                 >
-                  <Plus size={15} /> 添加第一个邮箱
+                  <Plus size={15} /> {t('settings.addFirstAccount')}
                 </button>
               </div>
             ) : null}
@@ -363,17 +380,17 @@ export function SettingsPage() {
           <section className="settings-card">
             <div className="settings-card__head">
               <div>
-                <h2>系统设置</h2>
-                <p>控制公开注册、演示入口与站点名称，仅管理员可见。</p>
+                <h2>{t('settings.adminTitle')}</h2>
+                <p>{t('settings.adminSubtitle')}</p>
               </div>
               <span className="badge">
-                <Settings2 size={13} /> 管理员
+                <Settings2 size={13} /> {t('settings.admin')}
               </span>
             </div>
 
             <div className="admin-settings">
               <label className="field">
-                <span className="field__label">站点名称</span>
+                <span className="field__label">{t('settings.siteName')}</span>
                 <input
                   className="input"
                   value={adminForm.siteName}
@@ -381,16 +398,18 @@ export function SettingsPage() {
                   onChange={(event) =>
                     setAdminForm((current) => ({ ...current, siteName: event.target.value }))
                   }
-                  placeholder="例如：Yinx 的邮箱"
+                  placeholder={t('settings.sitePlaceholder')}
                 />
               </label>
 
               <label className="switch-row">
                 <span className="switch-row__text">
-                  <strong>允许公开注册</strong>
+                  <strong>{t('settings.allowRegistration')}</strong>
                   <small>
-                    开启后任何人都可以创建本地账号；关闭后只有管理员能创建账号。
-                    {adminForm.allowRegistration ? ' 当前：允许注册。' : ' 当前：仅管理员可创建。'}
+                    {t('settings.allowRegistrationHint')}
+                    {adminForm.allowRegistration
+                      ? ` ${t('settings.registrationOn')}`
+                      : ` ${t('settings.registrationOff')}`}
                   </small>
                 </span>
                 <input
@@ -408,8 +427,8 @@ export function SettingsPage() {
 
               <label className="switch-row">
                 <span className="switch-row__text">
-                  <strong>启用演示邮箱</strong>
-                  <small>在登录页保留「用演示邮箱直接体验」入口，适合展示或试用。</small>
+                  <strong>{t('settings.demoEnabled')}</strong>
+                  <small>{t('settings.demoEnabledHint')}</small>
                 </span>
                 <input
                   type="checkbox"
@@ -422,7 +441,7 @@ export function SettingsPage() {
               </label>
 
               <div className="admin-settings__foot">
-                <span>保存后立即生效；已登录用户不会受到影响。</span>
+                <span>{t('settings.applyHint')}</span>
                 <button
                   type="button"
                   className="button button--primary button--sm"
@@ -436,7 +455,7 @@ export function SettingsPage() {
                   disabled={adminMutation.isPending || !adminForm.siteName.trim()}
                 >
                   {adminMutation.isPending ? <Spinner /> : <ShieldCheck size={14} />}
-                  保存设置
+                  {t('settings.saveSystem')}
                 </button>
               </div>
             </div>
@@ -447,10 +466,8 @@ export function SettingsPage() {
           <section className="settings-card">
             <div className="settings-card__head">
               <div>
-                <h2>附件缓存</h2>
-                <p>
-                  收信时解析出的附件会暂存在服务器磁盘上，同一封邮件的多个附件因此不必重复下载。
-                </p>
+                <h2>{t('settings.cacheTitle')}</h2>
+                <p>{t('settings.cacheSubtitle')}</p>
               </div>
               <span className="badge">
                 <HardDrive size={13} /> {formatBytes(attachmentCache.data?.diskBytes ?? 0)}
@@ -462,20 +479,21 @@ export function SettingsPage() {
                 <span className="switch-row__text">
                   <strong>
                     {attachmentCache.isLoading
-                      ? '正在读取…'
-                      : `${attachmentCache.data?.entries ?? 0} 封邮件的附件在缓存中`}
+                      ? t('settings.cacheLoading')
+                      : t('settings.cacheEntries', { count: attachmentCache.data?.entries ?? 0 })}
                   </strong>
                   <small>
-                    磁盘 {formatBytes(attachmentCache.data?.diskBytes ?? 0)} / 上限{' '}
-                    {formatBytes(attachmentCache.data?.limitBytes ?? 0)}，正文常驻内存{' '}
-                    {formatBytes(attachmentCache.data?.memoryBytes ?? 0)}。闲置 10
-                    分钟或超出上限后会自动淘汰。
+                    {t('settings.cacheUsage', {
+                      disk: formatBytes(attachmentCache.data?.diskBytes ?? 0),
+                      limit: formatBytes(attachmentCache.data?.limitBytes ?? 0),
+                      memory: formatBytes(attachmentCache.data?.memoryBytes ?? 0),
+                    })}
                   </small>
                 </span>
               </div>
 
               <div className="admin-settings__foot">
-                <span>清理只删除缓存，不会影响服务器上的邮件和附件本身。</span>
+                <span>{t('settings.cacheHint')}</span>
                 <button
                   type="button"
                   className="button button--ghost button--sm"
@@ -483,7 +501,7 @@ export function SettingsPage() {
                   disabled={clearCacheMutation.isPending}
                 >
                   {clearCacheMutation.isPending ? <Spinner /> : <Trash2 size={14} />}
-                  清理缓存
+                  {t('settings.clearCache')}
                 </button>
               </div>
             </div>
@@ -496,16 +514,16 @@ export function SettingsPage() {
           <div className="settings-card__head">
             <div>
               <h2>{t('settings.preferences.title')}</h2>
-              <p>这些设置保存在服务端，换设备登录也会保持一致。</p>
+              <p>{t('settings.prefsSubtitle')}</p>
             </div>
             <span className="badge">
-              <SlidersHorizontal size={13} /> 个性化
+              <SlidersHorizontal size={13} /> {t('settings.prefsBadge')}
             </span>
           </div>
 
           <div className="pref-grid">
             <label className="field">
-              <span className="field__label">自动刷新间隔</span>
+              <span className="field__label">{t('settings.refreshInterval')}</span>
               <select
                 className="input"
                 value={prefForm.refreshSeconds}
@@ -516,17 +534,17 @@ export function SettingsPage() {
                   }))
                 }
               >
-                <option value={0}>关闭自动刷新</option>
-                <option value={15}>每 15 秒</option>
-                <option value={30}>每 30 秒</option>
-                <option value={60}>每 1 分钟</option>
-                <option value={300}>每 5 分钟</option>
-                <option value={600}>每 10 分钟</option>
+                <option value={0}>{t('settings.refreshOff')}</option>
+                <option value={15}>{t('settings.everySeconds', { count: 15 })}</option>
+                <option value={30}>{t('settings.everySeconds', { count: 30 })}</option>
+                <option value={60}>{t('settings.everyMinutes', { count: 1 })}</option>
+                <option value={300}>{t('settings.everyMinutes', { count: 5 })}</option>
+                <option value={600}>{t('settings.everyMinutes', { count: 10 })}</option>
               </select>
             </label>
 
             <label className="field">
-              <span className="field__label">每页邮件数</span>
+              <span className="field__label">{t('settings.pageSize')}</span>
               <select
                 className="input"
                 value={prefForm.pageSize}
@@ -537,15 +555,15 @@ export function SettingsPage() {
                   }))
                 }
               >
-                <option value={20}>20 封</option>
-                <option value={30}>30 封</option>
-                <option value={50}>50 封</option>
-                <option value={100}>100 封</option>
+                <option value={20}>{t('settings.messagesCount', { count: 20 })}</option>
+                <option value={30}>{t('settings.messagesCount', { count: 30 })}</option>
+                <option value={50}>{t('settings.messagesCount', { count: 50 })}</option>
+                <option value={100}>{t('settings.messagesCount', { count: 100 })}</option>
               </select>
             </label>
 
             <label className="field">
-              <span className="field__label">默认视图</span>
+              <span className="field__label">{t('settings.defaultView')}</span>
               <select
                 className="input"
                 value={prefForm.defaultView}
@@ -556,13 +574,13 @@ export function SettingsPage() {
                   }))
                 }
               >
-                <option value="account">打开第一个邮箱</option>
-                <option value="unified">全部收件箱</option>
+                <option value="account">{t('settings.viewAccount')}</option>
+                <option value="unified">{t('settings.viewUnified')}</option>
               </select>
             </label>
 
             <label className="field">
-              <span className="field__label">列表密度</span>
+              <span className="field__label">{t('settings.density')}</span>
               <select
                 className="input"
                 value={prefForm.density}
@@ -573,8 +591,8 @@ export function SettingsPage() {
                   }))
                 }
               >
-                <option value="comfortable">舒适（显示预览）</option>
-                <option value="compact">紧凑（更多邮件）</option>
+                <option value="comfortable">{t('settings.densityComfortable')}</option>
+                <option value="compact">{t('settings.densityCompact')}</option>
               </select>
             </label>
           </div>
@@ -582,8 +600,8 @@ export function SettingsPage() {
           <div className="pref-switches">
             <label className="switch-row">
               <span className="switch-row__text">
-                <strong>打开邮件时自动标为已读</strong>
-                <small>关闭后可以手动控制已读状态，适合需要稍后处理的邮件。</small>
+                <strong>{t('settings.autoRead')}</strong>
+                <small>{t('settings.autoReadHint')}</small>
               </span>
               <input
                 type="checkbox"
@@ -597,8 +615,8 @@ export function SettingsPage() {
 
             <label className="switch-row">
               <span className="switch-row__text">
-                <strong>默认显示远程图片</strong>
-                <small>远程图片可能被发件人用于追踪阅读行为，开启后不再逐封询问。</small>
+                <strong>{t('settings.remoteImages')}</strong>
+                <small>{t('settings.remoteImagesHint')}</small>
               </span>
               <input
                 type="checkbox"
@@ -615,8 +633,8 @@ export function SettingsPage() {
 
             <label className="switch-row">
               <span className="switch-row__text">
-                <strong>桌面通知</strong>
-                <small>页面在后台时，新邮件会弹出系统通知；首次开启需要浏览器授权。</small>
+                <strong>{t('settings.desktopNotifications')}</strong>
+                <small>{t('settings.desktopNotificationsHint')}</small>
               </span>
               <input
                 type="checkbox"
@@ -628,7 +646,7 @@ export function SettingsPage() {
           </div>
 
           <div className="admin-settings__foot">
-            <span>自动刷新关闭后，仍可通过窗口聚焦或右上角刷新按钮获取新邮件。</span>
+            <span>{t('settings.refreshHint')}</span>
             <div className="pref-actions">
               <button
                 type="button"
@@ -636,7 +654,7 @@ export function SettingsPage() {
                 onClick={() => setPrefForm(DEFAULT_PREFERENCES)}
                 disabled={savingPrefs}
               >
-                恢复默认
+                {t('settings.resetDefaults')}
               </button>
               <button
                 type="button"
@@ -645,7 +663,7 @@ export function SettingsPage() {
                 disabled={savingPrefs}
               >
                 {savingPrefs ? <Spinner /> : <SlidersHorizontal size={14} />}
-                保存偏好
+                {t('settings.savePreferences')}
               </button>
             </div>
           </div>
@@ -657,15 +675,13 @@ export function SettingsPage() {
               <h2>{t('settings.session.title')}</h2>
               <p>{t('settings.session.subtitle')}</p>
             </div>
-            <span className="badge">临时</span>
+            <span className="badge">{t('settings.temporary')}</span>
           </div>
           <div className="pref-switches">
             <label className="switch-row">
               <span className="switch-row__text">
-                <strong>删除邮件前二次确认</strong>
-                <small>
-                  关闭后，删除会立即执行，不再弹出确认框；也可以在删除确认框里取消勾选。
-                </small>
+                <strong>{t('settings.confirmDelete')}</strong>
+                <small>{t('settings.confirmDeleteHint')}</small>
               </span>
               <input
                 type="checkbox"
@@ -700,8 +716,8 @@ export function SettingsPage() {
                   onClick={() => setTheme(option.value)}
                 >
                   <Icon size={19} />
-                  <span className="theme-option__label">{option.label}</span>
-                  <span className="theme-option__desc">{option.description}</span>
+                  <span className="theme-option__label">{t(option.labelKey)}</span>
+                  <span className="theme-option__desc">{t(option.descKey)}</span>
                   {theme === option.value ? (
                     <Check size={15} className="theme-option__check" />
                   ) : null}
@@ -723,7 +739,7 @@ export function SettingsPage() {
               >
                 <span className="theme-option__label">{t(`settings.language.${option}`)}</span>
                 <span className="theme-option__desc">
-                  {option === 'zh' ? '简体中文' : 'English'}
+                  {t(option === 'zh' ? 'settings.language.zh' : 'settings.language.en')}
                 </span>
                 {locale === option ? <Check size={15} className="theme-option__check" /> : null}
               </button>
@@ -735,26 +751,25 @@ export function SettingsPage() {
           <div className="settings-card__head">
             <div>
               <h2>{t('settings.about.title')}</h2>
-              <p>一个自托管的开源多邮箱 Web 客户端。</p>
+              <p>{t('settings.aboutSubtitle')}</p>
             </div>
             <span className="badge">v{config?.version ?? '0.1.0'}</span>
           </div>
           <ul className="about-list">
             <li>
               <ShieldCheck size={15} />
-              邮箱密码使用 AES-256-GCM 加密，密钥由 <code>APP_SECRET</code> 派生；会话 Cookie 为
-              HttpOnly + SameSite=Lax。
+              {t('settings.aboutSecurity')}
             </li>
             <li>
               <BadgeCheck size={15} />
-              邮件正文在服务端清洗，并在沙箱 iframe 中以严格 CSP 渲染，默认拦截远程图片。
+              {t('settings.aboutSanitize')}
             </li>
             <li>
               <Monitor size={15} />
-              React + Vite 前端，NestJS + SQLite 后端，IMAP / SMTP 使用 ImapFlow 与 Nodemailer。
+              {t('settings.aboutStack')}
             </li>
           </ul>
-          <p className="settings-about__license">MIT License · 欢迎自托管与二次开发</p>
+          <p className="settings-about__license">{t('settings.aboutLicense')}</p>
         </section>
       </main>
 
@@ -770,8 +785,10 @@ export function SettingsPage() {
 
       <Modal
         open={clearCacheOpen}
-        title="清理附件缓存？"
-        subtitle={`将释放约 ${formatBytes(attachmentCache.data?.diskBytes ?? 0)} 磁盘空间`}
+        title={t('settings.clearCacheTitle')}
+        subtitle={t('settings.clearCacheSubtitle', {
+          size: formatBytes(attachmentCache.data?.diskBytes ?? 0),
+        })}
         onClose={() => {
           if (!clearCacheMutation.isPending) setClearCacheOpen(false)
         }}
@@ -783,7 +800,7 @@ export function SettingsPage() {
               onClick={() => setClearCacheOpen(false)}
               disabled={clearCacheMutation.isPending}
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -792,14 +809,12 @@ export function SettingsPage() {
               disabled={clearCacheMutation.isPending}
             >
               {clearCacheMutation.isPending ? <Spinner /> : <Trash2 size={15} />}
-              清理缓存
+              {t('settings.clearCache')}
             </button>
           </div>
         }
       >
-        <p className="delete-note">
-          缓存中的附件会在下次打开邮件或下载时重新从邮件服务器读取；邮件、附件本身和已发送的邮件都不受影响。
-        </p>
+        <p className="delete-note">{t('settings.clearCacheBody')}</p>
       </Modal>
     </div>
   )

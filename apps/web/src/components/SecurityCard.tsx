@@ -5,12 +5,16 @@ import { useState } from 'react'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { copyToClipboard } from '@/lib/clipboard'
+import { useI18n } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/locales'
 import { useToast } from '@/lib/toast'
 import { Spinner } from './Spinner'
 
 /** Compress a user agent into "Chrome · Linux"; the raw string stays in the title. */
-function describeAgent(userAgent: string | null): string {
-  if (!userAgent) return '未知设备'
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string
+
+function describeAgent(userAgent: string | null, t: Translate): string {
+  if (!userAgent) return t('security.unknownDevice')
   const browser = /Edg\//.test(userAgent)
     ? 'Edge'
     : /Firefox\//.test(userAgent)
@@ -19,7 +23,7 @@ function describeAgent(userAgent: string | null): string {
         ? 'Chrome'
         : /Safari\//.test(userAgent)
           ? 'Safari'
-          : '浏览器'
+          : t('security.browser')
   const os = /Windows/.test(userAgent)
     ? 'Windows'
     : /Android/.test(userAgent)
@@ -48,6 +52,7 @@ function formatMoment(iso: string): string {
 export function SecurityCard() {
   const { user } = useAuth()
   const toast = useToast()
+  const { t } = useI18n()
   const queryClient = useQueryClient()
   const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirm: '' })
   const [formError, setFormError] = useState('')
@@ -77,7 +82,7 @@ export function SecurityCard() {
       setForm({ currentPassword: '', newPassword: '', confirm: '' })
       setFormError('')
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
-      toast.success('密码已修改', '其他设备上的登录已自动退出')
+      toast.success(t('security.passwordChanged'), t('security.passwordChangedBody'))
     },
     onError: (error) => setFormError(errorMessage(error)),
   })
@@ -86,9 +91,9 @@ export function SecurityCard() {
     mutationFn: (id: string) => api.delete(`/auth/sessions/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
-      toast.success('已退出该会话')
+      toast.success(t('security.sessionRevoked'))
     },
-    onError: (error) => toast.error('退出会话失败', errorMessage(error)),
+    onError: (error) => toast.error(t('security.revokeFailed'), errorMessage(error)),
   })
 
   const startTotp = useMutation({
@@ -109,7 +114,7 @@ export function SecurityCard() {
       setSetup(null)
       setRecoveryCodes(result.recoveryCodes)
       setTotpCode('')
-      toast.success('两步验证已开启', '请把恢复码保存在安全的地方')
+      toast.success(t('security.totpEnabled'), t('security.totpEnabledBody'))
     },
     onError: (error) => setTotpError(errorMessage(error)),
   })
@@ -121,7 +126,7 @@ export function SecurityCard() {
       setRecoveryCodes(null)
       setDisablePassword('')
       setTotpError('')
-      toast.success('两步验证已关闭')
+      toast.success(t('security.totpDisabled'))
     },
     onError: (error) => setTotpError(errorMessage(error)),
   })
@@ -129,8 +134,8 @@ export function SecurityCard() {
   async function copyRecoveryCodes() {
     if (!recoveryCodes) return
     const copied = await copyToClipboard(recoveryCodes.join('\n'))
-    if (copied) toast.success('恢复码已复制')
-    else toast.error('复制失败', '请手动选择并复制')
+    if (copied) toast.success(t('security.recoveryCopied'))
+    else toast.error(t('security.copyFailed'), t('security.copyFailedBody'))
   }
 
   const revokeOthers = useMutation({
@@ -138,25 +143,27 @@ export function SecurityCard() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
       toast.success(
-        result.revoked > 0 ? `已退出 ${result.revoked} 个其他会话` : '没有其他登录中的会话',
+        result.revoked > 0
+          ? t('security.revokedOthers', { count: result.revoked })
+          : t('security.noOtherSessions'),
       )
     },
-    onError: (error) => toast.error('操作失败', errorMessage(error)),
+    onError: (error) => toast.error(t('security.actionFailed'), errorMessage(error)),
   })
 
   function submitPassword(event: React.FormEvent) {
     event.preventDefault()
     setFormError('')
     if (!form.currentPassword) {
-      setFormError('请输入当前密码')
+      setFormError(t('security.enterCurrentPassword'))
       return
     }
     if (form.newPassword.length < 8) {
-      setFormError('新密码至少需要 8 个字符')
+      setFormError(t('security.passwordShort'))
       return
     }
     if (form.newPassword !== form.confirm) {
-      setFormError('两次输入的新密码不一致')
+      setFormError(t('security.passwordMismatch'))
       return
     }
     changePassword.mutate({
@@ -171,21 +178,21 @@ export function SecurityCard() {
     <section className="settings-card">
       <div className="settings-card__head">
         <div>
-          <h2>账号安全</h2>
-          <p>修改登录密码，并管理哪些设备还保持着登录状态。</p>
+          <h2>{t('security.title')}</h2>
+          <p>{t('security.subtitle')}</p>
         </div>
         <span className="badge">
-          <ShieldCheck size={13} /> 安全
+          <ShieldCheck size={13} /> {t('security.badge')}
         </span>
       </div>
 
       {user?.isDemo ? (
-        <p className="settings-note">演示账号使用临时密码，不支持修改密码；可以正常管理会话。</p>
+        <p className="settings-note">{t('security.demoNote')}</p>
       ) : (
         <form className="security-form" onSubmit={submitPassword}>
           <div className="security-form__fields">
             <label className="field">
-              <span>当前密码</span>
+              <span>{t('security.currentPassword')}</span>
               <input
                 type="password"
                 autoComplete="current-password"
@@ -193,11 +200,11 @@ export function SecurityCard() {
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, currentPassword: event.target.value }))
                 }
-                placeholder="用于确认是你本人"
+                placeholder={t('security.currentPasswordPlaceholder')}
               />
             </label>
             <label className="field">
-              <span>新密码</span>
+              <span>{t('security.newPassword')}</span>
               <input
                 type="password"
                 autoComplete="new-password"
@@ -205,17 +212,17 @@ export function SecurityCard() {
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, newPassword: event.target.value }))
                 }
-                placeholder="至少 8 个字符"
+                placeholder={t('security.newPasswordPlaceholder')}
               />
             </label>
             <label className="field">
-              <span>确认新密码</span>
+              <span>{t('security.confirmPassword')}</span>
               <input
                 type="password"
                 autoComplete="new-password"
                 value={form.confirm}
                 onChange={(event) => setForm((prev) => ({ ...prev, confirm: event.target.value }))}
-                placeholder="再输入一次"
+                placeholder={t('security.confirmPlaceholder')}
               />
             </label>
           </div>
@@ -227,7 +234,7 @@ export function SecurityCard() {
               disabled={changePassword.isPending}
             >
               {changePassword.isPending ? <Spinner /> : <KeyRound size={14} />}
-              修改密码
+              {t('security.changePassword')}
             </button>
           </div>
         </form>
@@ -236,19 +243,18 @@ export function SecurityCard() {
       <div className="security-sessions security-totp">
         <div className="security-sessions__head">
           <h3>
-            <Smartphone size={14} /> 两步验证
+            <Smartphone size={14} /> {t('security.totpTitle')}
           </h3>
-          <span className="badge">{totpEnabled ? '已开启' : '未开启'}</span>
+          <span className="badge">
+            {totpEnabled ? t('security.totpOn') : t('security.totpOff')}
+          </span>
         </div>
 
         {totpError ? <p className="form__error">{totpError}</p> : null}
 
         {!totpEnabled && !setup ? (
           <div className="security-totp__intro">
-            <p className="settings-note">
-              开启后，登录除了密码还需要验证器应用（1Password、Google Authenticator 等）里的 6
-              位验证码；忘记手机时可用一次性恢复码。
-            </p>
+            <p className="settings-note">{t('security.totpIntro')}</p>
             <button
               type="button"
               className="button button--soft button--sm"
@@ -256,19 +262,17 @@ export function SecurityCard() {
               disabled={startTotp.isPending || user?.isDemo}
             >
               {startTotp.isPending ? <Spinner /> : <ShieldCheck size={14} />}
-              开启两步验证
+              {t('security.enableTotp')}
             </button>
           </div>
         ) : null}
 
         {setup ? (
           <div className="security-totp__setup">
-            <p>
-              1. 在验证器应用里添加账号，手动输入密钥（或粘贴下面的 <code>otpauth</code> 链接）：
-            </p>
+            <p>{t('security.setupStep1')}</p>
             <code className="totp-secret">{setup.secret}</code>
             <p className="totp-uri">{setup.otpauth}</p>
-            <p>2. 输入应用里显示的 6 位验证码，确认绑定：</p>
+            <p>{t('security.setupStep2')}</p>
             <form
               className="totp-form"
               onSubmit={(event) => {
@@ -283,7 +287,7 @@ export function SecurityCard() {
                 placeholder="123456"
                 value={totpCode}
                 onChange={(event) => setTotpCode(event.target.value)}
-                aria-label="验证码"
+                aria-label={t('security.codeAria')}
               />
               <button
                 type="submit"
@@ -291,7 +295,7 @@ export function SecurityCard() {
                 disabled={enableTotp.isPending || totpCode.trim().length < 6}
               >
                 {enableTotp.isPending ? <Spinner /> : <Check size={14} />}
-                确认开启
+                {t('security.confirmEnable')}
               </button>
               <button
                 type="button"
@@ -301,7 +305,7 @@ export function SecurityCard() {
                   setTotpError('')
                 }}
               >
-                取消
+                {t('common.cancel')}
               </button>
             </form>
           </div>
@@ -309,8 +313,8 @@ export function SecurityCard() {
 
         {recoveryCodes ? (
           <div className="totp-recovery">
-            <strong>恢复码（只显示这一次）</strong>
-            <p>每行只能使用一次；忘记手机时用它登录，之后请重新生成。</p>
+            <strong>{t('security.recoveryTitle')}</strong>
+            <p>{t('security.recoveryHint')}</p>
             <div className="totp-recovery__codes">
               {recoveryCodes.map((code) => (
                 <code key={code}>{code}</code>
@@ -321,7 +325,7 @@ export function SecurityCard() {
               className="button button--ghost button--sm"
               onClick={copyRecoveryCodes}
             >
-              复制全部
+              {t('security.copyAll')}
             </button>
           </div>
         ) : null}
@@ -338,10 +342,10 @@ export function SecurityCard() {
             <input
               type="password"
               autoComplete="current-password"
-              placeholder="输入当前密码以关闭"
+              placeholder={t('security.disablePlaceholder')}
               value={disablePassword}
               onChange={(event) => setDisablePassword(event.target.value)}
-              aria-label="当前密码"
+              aria-label={t('security.currentPassword')}
             />
             <button
               type="submit"
@@ -349,7 +353,7 @@ export function SecurityCard() {
               disabled={disableTotp.isPending || !disablePassword}
             >
               {disableTotp.isPending ? <Spinner /> : null}
-              关闭两步验证
+              {t('security.disable')}
             </button>
           </form>
         ) : null}
@@ -357,7 +361,7 @@ export function SecurityCard() {
 
       <div className="security-sessions">
         <div className="security-sessions__head">
-          <h3>登录中的设备</h3>
+          <h3>{t('security.devices')}</h3>
           <button
             type="button"
             className="button button--ghost button--sm"
@@ -365,18 +369,20 @@ export function SecurityCard() {
             disabled={revokeOthers.isPending || otherSessions === 0}
           >
             {revokeOthers.isPending ? <Spinner /> : null}
-            退出其他设备
+            {t('security.revokeOthers')}
           </button>
         </div>
 
         {sessionsQuery.isLoading ? (
           <div className="settings-loading">
-            <Spinner size={18} /> 正在读取会话…
+            <Spinner size={18} /> {t('security.loadingSessions')}
           </div>
         ) : null}
 
         {sessionsQuery.isError ? (
-          <p className="settings-note">无法读取会话列表：{errorMessage(sessionsQuery.error)}</p>
+          <p className="settings-note">
+            {t('security.sessionsError', { error: errorMessage(sessionsQuery.error) })}
+          </p>
         ) : null}
 
         {sessions.map((session) => (
@@ -386,11 +392,14 @@ export function SecurityCard() {
             </span>
             <div className="session-row__body">
               <div className="session-row__title">
-                <strong>{describeAgent(session.userAgent)}</strong>
-                {session.current ? <span className="badge badge--warm">当前设备</span> : null}
+                <strong>{describeAgent(session.userAgent, t)}</strong>
+                {session.current ? (
+                  <span className="badge badge--warm">{t('security.currentDevice')}</span>
+                ) : null}
               </div>
               <p title={session.userAgent ?? undefined}>
-                {session.ip ?? '未知地址'} · 登录于 {formatMoment(session.createdAt)}
+                {session.ip ?? t('security.unknownAddress')} ·{' '}
+                {t('security.signedInAt', { time: formatMoment(session.createdAt) })}
               </p>
             </div>
             {session.current ? null : (
@@ -400,19 +409,19 @@ export function SecurityCard() {
                 onClick={() => revokeSession.mutate(session.id)}
                 disabled={revokeSession.isPending}
               >
-                退出
+                {t('security.revoke')}
               </button>
             )}
           </article>
         ))}
 
         <div className="security-sessions__head security-sessions__head--events">
-          <h3>最近登录</h3>
-          <span className="security-sessions__hint">保留 90 天，最多显示 8 条</span>
+          <h3>{t('security.recent')}</h3>
+          <span className="security-sessions__hint">{t('security.recentHint')}</span>
         </div>
 
         {events.length === 0 ? (
-          <p className="settings-note">还没有登录记录。</p>
+          <p className="settings-note">{t('security.noEvents')}</p>
         ) : (
           events.map((event) => (
             <article className="session-row" key={event.id}>
@@ -423,16 +432,18 @@ export function SecurityCard() {
               </span>
               <div className="session-row__body">
                 <div className="session-row__title">
-                  <strong>{event.success ? '登录成功' : '登录失败'}</strong>
-                  <span className="session-row__device">{describeAgent(event.userAgent)}</span>
+                  <strong>
+                    {event.success ? t('security.loginOk') : t('security.loginFailed')}
+                  </strong>
+                  <span className="session-row__device">{describeAgent(event.userAgent, t)}</span>
                 </div>
                 <p>
-                  {event.ip ?? '未知地址'} · {formatMoment(event.createdAt)}
+                  {event.ip ?? t('security.unknownAddress')} · {formatMoment(event.createdAt)}
                   {event.success
                     ? ''
                     : event.reason === 'demo'
-                      ? ' · 演示账号禁止密码登录'
-                      : ' · 密码不正确'}
+                      ? t('security.demoBlocked')
+                      : t('security.badPassword')}
                 </p>
               </div>
             </article>
