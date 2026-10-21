@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   is_demo       INTEGER NOT NULL DEFAULT 0,
   is_admin      INTEGER NOT NULL DEFAULT 0,
+  totp_secret   TEXT,
+  totp_enabled  INTEGER NOT NULL DEFAULT 0,
+  totp_last_counter INTEGER,
+  totp_recovery TEXT,
   created_at    TEXT NOT NULL
 );
 
@@ -25,6 +29,16 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS login_challenges (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_challenges_user ON login_challenges(user_id);
 
 CREATE TABLE IF NOT EXISTS login_events (
   id         TEXT PRIMARY KEY,
@@ -125,6 +139,20 @@ export class DatabaseService implements OnModuleDestroy {
     const userColumns = this.db.prepare('PRAGMA table_info(users)').all() as { name: string }[]
     if (!userColumns.some((column) => column.name === 'is_admin')) {
       this.db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+    }
+
+    const totpColumns = this.db.prepare('PRAGMA table_info(users)').all() as { name: string }[]
+    if (!totpColumns.some((column) => column.name === 'totp_secret')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN totp_secret TEXT')
+    }
+    if (!totpColumns.some((column) => column.name === 'totp_enabled')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0')
+    }
+    if (!totpColumns.some((column) => column.name === 'totp_last_counter')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN totp_last_counter INTEGER')
+    }
+    if (!totpColumns.some((column) => column.name === 'totp_recovery')) {
+      this.db.exec('ALTER TABLE users ADD COLUMN totp_recovery TEXT')
     }
 
     const sessionColumns = this.db.prepare('PRAGMA table_info(sessions)').all() as {

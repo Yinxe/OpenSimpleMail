@@ -15,7 +15,7 @@ OpenSimpleMail 让你在一个界面里管理多个 IMAP / SMTP 邮箱：统一�
 
 - **首次启动向导**：第一次访问时创建管理员账号，并完成站点名称、公开注册、演示模式等初始配置。
 - **管理员与注册开关**：管理员可随时开启/关闭公开注册；关闭后登录页隐藏注册入口，注册接口直接拒绝。
-- **账号安全**：修改密码（自动踢掉其他设备）、会话列表（浏览器 / IP / 登录时间）与逐个撤销。
+- **账号安全**：修改密码（自动踢掉其他设备）、会话列表（浏览器 / IP / 登录时间）与逐个撤销、两步验证（TOTP + 一次性恢复码）、登录审计（成功/失败、IP、设备）。
 - **用户级使用偏好**：自动刷新间隔、每页数量、默认视图、列表密度、自动已读、远程图片策略都可以自己配置，并保存在服务端。
 
 - **多邮箱账户**：添加任意数量的 IMAP / SMTP 邮箱，独立连接、独立文件夹与未读计数。
@@ -113,12 +113,14 @@ docker compose up -d
 - 容器以 root 启动，先把 `./data` 的属主改成镜像内的 `node`（uid 1000），随后立即降权运行，所以宿主机目录属于谁都能跑起来。只有你在 compose 里覆盖了 `user:`，才需要自己先 `sudo chown -R 1000:1000 data`。
 - 附件缓存不用单独挂载：它就在 `./data/attachments` 里，发送完成或缓存过期即删除；管理员也可以在「设置 → 附件缓存」里查看占用并一键清理。
 - 本地开发和 Docker 用的是同一个 `./data`，不要同时启动两边（SQLite 会被两个进程同时写）。
+- 想把附件放到另一块盘：在 compose 里给它单独加一个挂载点即可，`ATTACHMENT_DIR` 不用改，例如 `- /srv/mail-attachments:/app/data/attachments`。
 
 从旧版本（命名卷）升级时，先把卷里的数据搬到 `./data`：
 
 ```bash
 docker compose down
 VOLUME=$(docker volume ls --format '{{.Name}}' | grep open-simple-mail-data | head -1)
+test -n "$VOLUME" || { echo "没有找到旧的命名卷，跳过迁移"; exit 0; }
 mkdir -p data
 docker run --rm -v "$VOLUME":/from -v "$PWD/data":/to alpine cp -a /from/. /to/
 ```

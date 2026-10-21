@@ -1,9 +1,10 @@
-import type { LoginEventDto, SessionDto } from '@osm/shared'
+import type { LoginEventDto, SessionDto, TotpEnabledDto, TotpSetupDto } from '@osm/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, KeyRound, Monitor, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Check, KeyRound, Monitor, ShieldCheck, Smartphone } from 'lucide-react'
 import { useState } from 'react'
 import { api, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { copyToClipboard } from '@/lib/clipboard'
 import { useToast } from '@/lib/toast'
 import { Spinner } from './Spinner'
 
@@ -50,6 +51,12 @@ export function SecurityCard() {
   const queryClient = useQueryClient()
   const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirm: '' })
   const [formError, setFormError] = useState('')
+  const [totpEnabled, setTotpEnabled] = useState(Boolean(user?.totpEnabled))
+  const [setup, setSetup] = useState<TotpSetupDto | null>(null)
+  const [totpCode, setTotpCode] = useState('')
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
+  const [disablePassword, setDisablePassword] = useState('')
+  const [totpError, setTotpError] = useState('')
 
   const sessionsQuery = useQuery({
     queryKey: ['sessions'],
@@ -83,6 +90,48 @@ export function SecurityCard() {
     },
     onError: (error) => toast.error('退出会话失败', errorMessage(error)),
   })
+
+  const startTotp = useMutation({
+    mutationFn: () => api.post<TotpSetupDto>('/auth/totp/setup'),
+    onSuccess: (result) => {
+      setSetup(result)
+      setRecoveryCodes(null)
+      setTotpCode('')
+      setTotpError('')
+    },
+    onError: (error) => setTotpError(errorMessage(error)),
+  })
+
+  const enableTotp = useMutation({
+    mutationFn: (code: string) => api.post<TotpEnabledDto>('/auth/totp/enable', { code }),
+    onSuccess: (result) => {
+      setTotpEnabled(true)
+      setSetup(null)
+      setRecoveryCodes(result.recoveryCodes)
+      setTotpCode('')
+      toast.success('两步验证已开启', '请把恢复码保存在安全的地方')
+    },
+    onError: (error) => setTotpError(errorMessage(error)),
+  })
+
+  const disableTotp = useMutation({
+    mutationFn: (password: string) => api.post('/auth/totp/disable', { password }),
+    onSuccess: () => {
+      setTotpEnabled(false)
+      setRecoveryCodes(null)
+      setDisablePassword('')
+      setTotpError('')
+      toast.success('两步验证已关闭')
+    },
+    onError: (error) => setTotpError(errorMessage(error)),
+  })
+
+  async function copyRecoveryCodes() {
+    if (!recoveryCodes) return
+    const copied = await copyToClipboard(recoveryCodes.join('\n'))
+    if (copied) toast.success('恢复码已复制')
+    else toast.error('复制失败', '请手动选择并复制')
+  }
 
   const revokeOthers = useMutation({
     mutationFn: () => api.post<{ revoked: number }>('/auth/sessions/revoke-others', {}),
@@ -183,6 +232,128 @@ export function SecurityCard() {
           </div>
         </form>
       )}
+
+      <div className="security-sessions security-totp">
+        <div className="security-sessions__head">
+          <h3>
+            <Smartphone size={14} /> 两步验证
+          </h3>
+          <span className="badge">{totpEnabled ? '已开启' : '未开启'}</span>
+        </div>
+
+        {totpError ? <p className="form__error">{totpError}</p> : null}
+
+        {!totpEnabled && !setup ? (
+          <div className="security-totp__intro">
+            <p className="settings-note">
+              开启后，登录除了密码还需要验证器应用（1Password、Google Authenticator 等）里的 6
+              位验证码；忘记手机时可用一次性恢复码。
+            </p>
+            <button
+              type="button"
+              className="button button--soft button--sm"
+              onClick={() => startTotp.mutate()}
+              disabled={startTotp.isPending || user?.isDemo}
+            >
+              {startTotp.isPending ? <Spinner /> : <ShieldCheck size={14} />}
+              开启两步验证
+            </button>
+          </div>
+        ) : null}
+
+        {setup ? (
+          <div className="security-totp__setup">
+            <p>
+              1. 在验证器应用里添加账号，手动输入密钥（或粘贴下面的 <code>otpauth</code> 链接）：
+            </p>
+            <code className="totp-secret">{setup.secret}</code>
+            <p className="totp-uri">{setup.otpauth}</p>
+            <p>2. 输入应用里显示的 6 位验证码，确认绑定：</p>
+            <form
+              className="totp-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                setTotpError('')
+                enableTotp.mutate(totpCode.trim())
+              }}
+            >
+              <input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                value={totpCode}
+                onChange={(event) => setTotpCode(event.target.value)}
+                aria-label="验证码"
+              />
+              <button
+                type="submit"
+                className="button button--primary button--sm"
+                disabled={enableTotp.isPending || totpCode.trim().length < 6}
+              >
+                {enableTotp.isPending ? <Spinner /> : <Check size={14} />}
+                确认开启
+              </button>
+              <button
+                type="button"
+                className="button button--ghost button--sm"
+                onClick={() => {
+                  setSetup(null)
+                  setTotpError('')
+                }}
+              >
+                取消
+              </button>
+            </form>
+          </div>
+        ) : null}
+
+        {recoveryCodes ? (
+          <div className="totp-recovery">
+            <strong>恢复码（只显示这一次）</strong>
+            <p>每行只能使用一次；忘记手机时用它登录，之后请重新生成。</p>
+            <div className="totp-recovery__codes">
+              {recoveryCodes.map((code) => (
+                <code key={code}>{code}</code>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="button button--ghost button--sm"
+              onClick={copyRecoveryCodes}
+            >
+              复制全部
+            </button>
+          </div>
+        ) : null}
+
+        {totpEnabled ? (
+          <form
+            className="totp-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              setTotpError('')
+              disableTotp.mutate(disablePassword)
+            }}
+          >
+            <input
+              type="password"
+              autoComplete="current-password"
+              placeholder="输入当前密码以关闭"
+              value={disablePassword}
+              onChange={(event) => setDisablePassword(event.target.value)}
+              aria-label="当前密码"
+            />
+            <button
+              type="submit"
+              className="button button--ghost button--sm"
+              disabled={disableTotp.isPending || !disablePassword}
+            >
+              {disableTotp.isPending ? <Spinner /> : null}
+              关闭两步验证
+            </button>
+          </form>
+        ) : null}
+      </div>
 
       <div className="security-sessions">
         <div className="security-sessions__head">

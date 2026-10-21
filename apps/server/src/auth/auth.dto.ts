@@ -45,3 +45,25 @@ export class ChangePasswordDto {
   @Length(8, 128, { message: '新密码至少需要 8 个字符' })
   newPassword!: string
 }
+
+export class TotpCodeDto {
+  @IsString()
+  @Length(6, 12, { message: '请输入 6 位验证码' })
+  code!: string
+}
+
+export class TwoFactorLoginDto {
+  @IsString()
+  @Length(10, 200)
+  challengeToken!: string
+
+  @IsString()
+  @Length(6, 12, { message: '请输入 6 位验证码' })
+  code!: string
+}
+
+export class DisableTotpDto {
+  @IsString()
+  @Length(1, 128, { message: '请输入当前密码' })
+  password!: string
+}

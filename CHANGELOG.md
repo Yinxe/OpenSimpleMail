@@ -6,6 +6,8 @@ All notable changes to OpenSimpleMail are documented here. The format is based o
 
 ### Added
 
+- Two-factor authentication: enable TOTP from Settings (RFC 6238, SHA-1, 6 digits, 30 seconds), add the secret or `otpauth://` link to any authenticator, and confirm with one code. Sign-in becomes password → 5-minute challenge token → code or a one-time recovery code; codes cannot be replayed, recovery codes are removed when used and a challenge dies after five failures. The secret is stored encrypted with `APP_SECRET`.
+
 - Sign-in audit trail: every login attempt is stored with IP, user agent, outcome and reason, kept for 90 days and shown to the account owner as "最近登录" (8 most recent) in Settings.
 - Account security in Settings: change the password (the current one is verified, the new hash replaces it and every other session is revoked in the same transaction) and manage sessions — the list shows browser, IP and sign-in time, with per-session revoke and "sign out other devices". Session rows now record the client IP through a small migration.
 

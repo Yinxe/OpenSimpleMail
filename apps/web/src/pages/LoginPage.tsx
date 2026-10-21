@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth'
 type Mode = 'login' | 'recover'
 
 export function LoginPage() {
-  const { login, demoLogin, recoverAdmin, config } = useAuth()
+  const { login, loginTotp, demoLogin, recoverAdmin, config } = useAuth()
   const navigate = useNavigate()
   const [mode, setMode] = useState<Mode>('login')
   const [email, setEmail] = useState('')
@@ -21,13 +21,36 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [demoBusy, setDemoBusy] = useState(false)
+  // Set when the password was accepted but the account needs an authenticator code.
+  const [challenge, setChallenge] = useState<string | null>(null)
+  const [totpCode, setTotpCode] = useState('')
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault()
     setError('')
     setBusy(true)
     try {
-      await login(email, password)
+      const token = await login(email, password)
+      if (token) {
+        setChallenge(token)
+        setTotpCode('')
+        return
+      }
+      navigate('/app', { replace: true })
+    } catch (caught) {
+      setError(errorMessage(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onVerify(event: FormEvent) {
+    event.preventDefault()
+    if (!challenge) return
+    setError('')
+    setBusy(true)
+    try {
+      await loginTotp(challenge, totpCode)
       navigate('/app', { replace: true })
     } catch (caught) {
       setError(errorMessage(caught))
@@ -87,7 +110,51 @@ export function LoginPage() {
 
   return (
     <AuthLayout version={config?.version}>
-      {mode === 'login' ? (
+      {mode === 'login' && challenge ? (
+        <div className="auth-card">
+          <p className="eyebrow">TWO-FACTOR</p>
+          <h2>输入验证码</h2>
+          <p className="auth-card__sub">
+            打开手机上的验证器应用，输入 {config?.siteName ?? 'OpenSimpleMail'} 的 6 位验证码；
+            也可以用一次性恢复码登录。
+          </p>
+
+          <form className="form" onSubmit={onVerify}>
+            <label className="field">
+              <span className="field__label">验证码</span>
+              <span className="field__control">
+                <KeyRound size={16} className="field__icon" />
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6 位数字，或恢复码"
+                  value={totpCode}
+                  onChange={(event) => setTotpCode(event.target.value)}
+                  required
+                />
+              </span>
+            </label>
+
+            {error ? <p className="form__error">{error}</p> : null}
+
+            <button type="submit" className="button button--primary button--block" disabled={busy}>
+              {busy ? <Spinner /> : <ArrowRight size={17} />}
+              验证并登录
+            </button>
+          </form>
+
+          <button
+            type="button"
+            className="auth-card__recover-link"
+            onClick={() => {
+              setChallenge(null)
+              setError('')
+            }}
+          >
+            <ArrowLeft size={13} /> 返回，重新输入邮箱和密码
+          </button>
+        </div>
+      ) : mode === 'login' ? (
         <div className="auth-card">
           <p className="eyebrow">WELCOME BACK</p>
           <h2>登录你的邮箱工作台</h2>

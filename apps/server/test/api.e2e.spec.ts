@@ -12,10 +12,14 @@ import type {
   MoveOutcomeDto,
   SavedDraftDto,
   SessionDto,
+  TotpEnabledDto,
+  TotpSetupDto,
+  TwoFactorChallengeDto,
   UnifiedMessagePageDto,
   UserDto,
 } from '@osm/shared'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { totpCode } from '../src/auth/totp'
 
 const PORT = 4300 + Math.floor(Math.random() * 300)
 const BASE = `http://127.0.0.1:${PORT}/api`
@@ -471,6 +475,109 @@ describe('account security', () => {
     // The rejected old-password login above is recorded for the same address.
     expect(events.body.some((event) => !event.success && event.reason === 'credentials')).toBe(true)
     expect(events.body[0]?.createdAt >= (events.body.at(-1)?.createdAt ?? '')).toBe(true)
+  })
+})
+
+describe('two-factor authentication', () => {
+  const email = `totp-${Date.now()}@example.com`
+  const owner = new ApiClient()
+  let secret = ''
+  let recoveryCodes: string[] = []
+
+  it('enables two-factor after confirming a code', async () => {
+    const registered = await owner.json('/auth/register', {
+      ...post({ name: 'TOTP User', email, password: 'a-strong-password' }),
+    })
+    expect(registered.status).toBe(201)
+
+    const setup = await owner.json<TotpSetupDto>('/auth/totp/setup', { method: 'POST' })
+    expect(setup.status).toBe(200)
+    expect(setup.body.otpauth).toContain('otpauth://totp/')
+    secret = setup.body.secret
+
+    const wrong = await owner.json('/auth/totp/enable', { ...post({ code: '000000' }) })
+    expect(wrong.status).toBe(400)
+
+    const enabled = await owner.json<TotpEnabledDto>('/auth/totp/enable', {
+      ...post({ code: totpCode(secret) }),
+    })
+    expect(enabled.status).toBe(200)
+    expect(enabled.body.recoveryCodes).toHaveLength(8)
+    recoveryCodes = enabled.body.recoveryCodes
+
+    const me = await owner.json<{ user: UserDto }>('/auth/me')
+    expect(me.body.user.totpEnabled).toBe(true)
+  })
+
+  it('asks for the code at sign-in and rejects wrong or replayed codes', async () => {
+    const challenge = await new ApiClient().json<TwoFactorChallengeDto>('/auth/login', {
+      ...post({ email, password: 'a-strong-password' }),
+    })
+    expect(challenge.status).toBe(200)
+    expect(challenge.body.twoFactorRequired).toBe(true)
+
+    const bad = await new ApiClient().json('/auth/login/totp', {
+      ...post({ challengeToken: challenge.body.challengeToken, code: '000000' }),
+    })
+    expect(bad.status).toBe(401)
+
+    const session = new ApiClient()
+    const ok = await session.json<{ user: UserDto }>('/auth/login/totp', {
+      ...post({ challengeToken: challenge.body.challengeToken, code: totpCode(secret) }),
+    })
+    expect(ok.status).toBe(200)
+    expect(ok.body.user.email).toBe(email)
+    expect((await session.json('/auth/me')).status).toBe(200)
+
+    const replayChallenge = await new ApiClient().json<TwoFactorChallengeDto>('/auth/login', {
+      ...post({ email, password: 'a-strong-password' }),
+    })
+    const replay = await new ApiClient().json('/auth/login/totp', {
+      ...post({ challengeToken: replayChallenge.body.challengeToken, code: totpCode(secret) }),
+    })
+    expect(replay.status).toBe(401)
+  })
+
+  it('accepts a recovery code once', async () => {
+    const challenge = await new ApiClient().json<TwoFactorChallengeDto>('/auth/login', {
+      ...post({ email, password: 'a-strong-password' }),
+    })
+    const first = await new ApiClient().json('/auth/login/totp', {
+      ...post({
+        challengeToken: challenge.body.challengeToken,
+        code: recoveryCodes[0] ?? '',
+      }),
+    })
+    expect(first.status).toBe(200)
+
+    const secondChallenge = await new ApiClient().json<TwoFactorChallengeDto>('/auth/login', {
+      ...post({ email, password: 'a-strong-password' }),
+    })
+    const reused = await new ApiClient().json('/auth/login/totp', {
+      ...post({
+        challengeToken: secondChallenge.body.challengeToken,
+        code: recoveryCodes[0] ?? '',
+      }),
+    })
+    expect(reused.status).toBe(401)
+  })
+
+  it('disables two-factor with the password', async () => {
+    const wrong = await owner.json('/auth/totp/disable', {
+      ...post({ password: 'not-the-password' }),
+    })
+    expect(wrong.status).toBe(401)
+
+    const disabled = await owner.json('/auth/totp/disable', {
+      ...post({ password: 'a-strong-password' }),
+    })
+    expect(disabled.status).toBe(204)
+
+    const login = await new ApiClient().json<{ user: UserDto }>('/auth/login', {
+      ...post({ email, password: 'a-strong-password' }),
+    })
+    expect(login.status).toBe(200)
+    expect(login.body.user.totpEnabled).toBe(false)
   })
 })
 

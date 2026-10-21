@@ -11,7 +11,24 @@ export interface UserDto {
   name: string
   isDemo: boolean
   isAdmin: boolean
+  /** True once the account has confirmed an authenticator app. */
+  totpEnabled: boolean
   createdAt: string
+}
+
+export interface TotpSetupDto {
+  secret: string
+  otpauth: string
+}
+
+export interface TotpEnabledDto {
+  recoveryCodes: string[]
+}
+
+/** Returned by /auth/login when the account has two-factor enabled. */
+export interface TwoFactorChallengeDto {
+  twoFactorRequired: true
+  challengeToken: string
 }
 
 export interface AppConfigDto {

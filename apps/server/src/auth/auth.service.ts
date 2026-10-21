@@ -10,7 +10,14 @@ import {
   PreconditionFailedException,
   UnauthorizedException,
 } from '@nestjs/common'
-import type { LoginEventDto, SessionDto, UserDto } from '@osm/shared'
+import type {
+  LoginEventDto,
+  SessionDto,
+  TotpEnabledDto,
+  TotpSetupDto,
+  TwoFactorChallengeDto,
+  UserDto,
+} from '@osm/shared'
 import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { CryptoService } from '../core/crypto.service'
 import { DatabaseService } from '../core/database.service'
@@ -18,6 +25,13 @@ import { DemoService } from '../demo/demo.service'
 import { SettingsService } from '../settings/settings.service'
 import type { SetupDto } from '../setup/setup.dto'
 import type { ChangePasswordDto, LoginDto, RecoverAdminDto, RegisterDto } from './auth.dto'
+import {
+  generateRecoveryCodes,
+  generateTotpSecret,
+  normalizeRecoveryCode,
+  otpauthUri,
+  verifyTotp,
+} from './totp'
 
 export const SESSION_COOKIE = 'osm_session'
 
@@ -28,6 +42,10 @@ interface UserRow {
   password_hash: string
   is_demo: number
   is_admin: number
+  totp_secret: string | null
+  totp_enabled: number
+  totp_last_counter: number | null
+  totp_recovery: string | null
   created_at: string
 }
 
@@ -50,6 +68,9 @@ export interface SessionResult {
   maxAgeMs: number
 }
 
+/** A password check that still needs the authenticator code. */
+export type LoginOutcome = SessionResult | TwoFactorChallengeDto
+
 function toUserDto(row: UserRow): UserDto {
   return {
     id: row.id,
@@ -57,6 +78,7 @@ function toUserDto(row: UserRow): UserDto {
     name: row.name,
     isDemo: row.is_demo === 1,
     isAdmin: row.is_admin === 1,
+    totpEnabled: row.totp_enabled === 1,
     createdAt: row.created_at,
   }
 }
@@ -94,6 +116,10 @@ export class AuthService {
       password_hash: await this.crypto.hashPassword(dto.password),
       is_demo: 0,
       is_admin: 0,
+      totp_secret: null,
+      totp_enabled: 0,
+      totp_last_counter: null,
+      totp_recovery: null,
       created_at: new Date().toISOString(),
     }
     this.db.db
@@ -106,7 +132,7 @@ export class AuthService {
     return this.createSession(toUserDto(user), userAgent, ip)
   }
 
-  async login(dto: LoginDto, userAgent?: string, ip?: string): Promise<SessionResult> {
+  async login(dto: LoginDto, userAgent?: string, ip?: string): Promise<LoginOutcome> {
     if (!this.settings.isInitialized()) {
       throw new PreconditionFailedException('系统尚未初始化，请先完成启动引导')
     }
@@ -130,8 +156,18 @@ export class AuthService {
       throw new UnauthorizedException('邮箱或密码不正确')
     }
 
-    this.recordLogin({ userId: row.id, email, ip, userAgent, success: true, reason: null })
     this.db.db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(new Date().toISOString())
+
+    if (row.totp_enabled === 1) {
+      // The password was right, but the session only starts after the code, so
+      // the audit trail records the outcome of the second step instead.
+      return {
+        twoFactorRequired: true,
+        challengeToken: this.createChallenge(row.id),
+      }
+    }
+
+    this.recordLogin({ userId: row.id, email, ip, userAgent, success: true, reason: null })
     return this.createSession(toUserDto(row), userAgent, ip)
   }
 
@@ -150,6 +186,10 @@ export class AuthService {
       password_hash: await this.crypto.hashPassword(this.crypto.randomToken(24)),
       is_demo: 1,
       is_admin: 0,
+      totp_secret: null,
+      totp_enabled: 0,
+      totp_last_counter: null,
+      totp_recovery: null,
       created_at: new Date().toISOString(),
     }
     this.db.db
@@ -233,6 +273,10 @@ export class AuthService {
       password_hash: passwordHash,
       is_demo: 0,
       is_admin: 1,
+      totp_secret: null,
+      totp_enabled: 0,
+      totp_last_counter: null,
+      totp_recovery: null,
       created_at: new Date().toISOString(),
     }
 
@@ -284,6 +328,176 @@ export class AuthService {
   async logout(token: string | undefined): Promise<void> {
     if (!token) return
     this.db.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(this.crypto.sha256(token))
+  }
+
+  /**
+   * Finish a two-factor login: verify the authenticator code (or a one-time
+   * recovery code), then mint the session. Codes are single-use: the time step
+   * is stored so the same code cannot be replayed, and recovery codes are
+   * removed from the stored list when used.
+   */
+  async completeTwoFactor(
+    challengeToken: string,
+    code: string,
+    userAgent?: string,
+    ip?: string,
+  ): Promise<SessionResult> {
+    const row = this.db.db
+      .prepare(
+        `SELECT u.*, c.id AS challenge_id, c.attempts, c.expires_at AS challenge_expires
+         FROM login_challenges c JOIN users u ON u.id = c.user_id
+         WHERE c.token_hash = ?`,
+      )
+      .get(this.crypto.sha256(challengeToken)) as
+      | (UserRow & { challenge_id: string; attempts: number; challenge_expires: string })
+      | undefined
+
+    if (!row) throw new UnauthorizedException('验证已失效，请重新登录')
+    if (new Date(row.challenge_expires).getTime() <= Date.now()) {
+      this.db.db.prepare('DELETE FROM login_challenges WHERE id = ?').run(row.challenge_id)
+      throw new UnauthorizedException('验证已过期，请重新登录')
+    }
+    if (row.totp_enabled !== 1 || !row.totp_secret) {
+      this.db.db.prepare('DELETE FROM login_challenges WHERE id = ?').run(row.challenge_id)
+      throw new UnauthorizedException('该账号未开启两步验证')
+    }
+
+    const secret = this.crypto.decryptSecret(row.totp_secret)
+    const step = verifyTotp(secret, code)
+    const replay = step !== null && row.totp_last_counter !== null && step <= row.totp_last_counter
+    const recovery = step === null ? this.consumeRecoveryCode(row, code) : null
+
+    if ((step === null && !recovery) || (step !== null && replay)) {
+      this.db.db
+        .prepare('UPDATE login_challenges SET attempts = attempts + 1 WHERE id = ?')
+        .run(row.challenge_id)
+      if (row.attempts + 1 >= 5) {
+        this.db.db.prepare('DELETE FROM login_challenges WHERE id = ?').run(row.challenge_id)
+      }
+      this.recordLogin({
+        userId: row.id,
+        email: row.email,
+        ip,
+        userAgent,
+        success: false,
+        reason: replay ? 'totp-replay' : 'totp',
+      })
+      throw new UnauthorizedException('验证码不正确')
+    }
+
+    const transaction = this.db.db.transaction(() => {
+      if (step !== null) {
+        this.db.db.prepare('UPDATE users SET totp_last_counter = ? WHERE id = ?').run(step, row.id)
+      }
+      this.db.db.prepare('DELETE FROM login_challenges WHERE id = ?').run(row.challenge_id)
+    })
+    transaction()
+
+    this.recordLogin({
+      userId: row.id,
+      email: row.email,
+      ip,
+      userAgent,
+      success: true,
+      reason: recovery ? 'recovery-code' : null,
+    })
+    return this.createSession(toUserDto(row), userAgent, ip)
+  }
+
+  /** Generate a pending secret; the account stays unprotected until `enableTotp`. */
+  async startTotpSetup(userId: string): Promise<TotpSetupDto> {
+    const row = this.requireLocalUser(userId)
+    if (row.totp_enabled === 1) throw new BadRequestException('两步验证已经开启')
+    const secret = generateTotpSecret()
+    this.db.db
+      .prepare('UPDATE users SET totp_secret = ?, totp_enabled = 0 WHERE id = ?')
+      .run(this.crypto.encryptSecret(secret), row.id)
+    return { secret, otpauth: otpauthUri(secret, row.email) }
+  }
+
+  async enableTotp(userId: string, code: string): Promise<TotpEnabledDto> {
+    const row = this.requireLocalUser(userId)
+    if (row.totp_enabled === 1) throw new BadRequestException('两步验证已经开启')
+    if (!row.totp_secret) throw new BadRequestException('请先生成密钥')
+
+    const secret = this.crypto.decryptSecret(row.totp_secret)
+    const step = verifyTotp(secret, code)
+    if (step === null) throw new BadRequestException('验证码不正确，请检查手机上的代码')
+
+    const recoveryCodes = generateRecoveryCodes()
+    const hashes = recoveryCodes.map((value) => this.crypto.sha256(normalizeRecoveryCode(value)))
+    // The step is not consumed here: the code just confirmed the setup, and the
+    // owner may sign in with the next one. Replay protection starts at login.
+    this.db.db
+      .prepare(
+        `UPDATE users
+         SET totp_enabled = 1, totp_last_counter = NULL, totp_recovery = ?
+         WHERE id = ?`,
+      )
+      .run(JSON.stringify(hashes), row.id)
+    this.logger.log(`Two-factor authentication enabled for ${row.email}`)
+    return { recoveryCodes }
+  }
+
+  async disableTotp(userId: string, password: string): Promise<void> {
+    const row = this.requireLocalUser(userId)
+    const valid = await this.crypto.verifyPassword(password, row.password_hash)
+    if (!valid) throw new UnauthorizedException('密码不正确')
+    this.db.db
+      .prepare(
+        `UPDATE users
+         SET totp_secret = NULL, totp_enabled = 0, totp_last_counter = NULL, totp_recovery = NULL
+         WHERE id = ?`,
+      )
+      .run(row.id)
+    this.db.db.prepare('DELETE FROM login_challenges WHERE user_id = ?').run(row.id)
+    this.logger.log(`Two-factor authentication disabled for ${row.email}`)
+  }
+
+  private requireLocalUser(userId: string): UserRow {
+    const row = this.db.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
+      | UserRow
+      | undefined
+    if (!row) throw new NotFoundException('用户不存在')
+    if (row.is_demo === 1) throw new ForbiddenException('演示账号不支持两步验证')
+    return row
+  }
+
+  private createChallenge(userId: string): string {
+    const token = this.crypto.randomToken(32)
+    const now = new Date()
+    this.db.db.prepare('DELETE FROM login_challenges WHERE expires_at < ?').run(now.toISOString())
+    this.db.db
+      .prepare(
+        `INSERT INTO login_challenges (id, user_id, token_hash, attempts, created_at, expires_at)
+         VALUES (?, ?, ?, 0, ?, ?)`,
+      )
+      .run(
+        randomUUID(),
+        userId,
+        this.crypto.sha256(token),
+        now.toISOString(),
+        new Date(now.getTime() + 5 * 60 * 1000).toISOString(),
+      )
+    return token
+  }
+
+  private consumeRecoveryCode(row: UserRow, code: string): boolean {
+    if (!row.totp_recovery) return false
+    let hashes: string[]
+    try {
+      hashes = JSON.parse(row.totp_recovery) as string[]
+    } catch {
+      return false
+    }
+    const hash = this.crypto.sha256(normalizeRecoveryCode(code))
+    const index = hashes.indexOf(hash)
+    if (index < 0) return false
+    hashes.splice(index, 1)
+    this.db.db
+      .prepare('UPDATE users SET totp_recovery = ? WHERE id = ?')
+      .run(JSON.stringify(hashes), row.id)
+    return true
   }
 
   /**

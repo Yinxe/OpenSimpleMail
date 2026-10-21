@@ -23,7 +23,8 @@ interface AuthContextValue {
   config: AppConfigDto | null
   preferences: UserPreferencesDto
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<string | null>
+  loginTotp: (challengeToken: string, code: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
   demoLogin: () => Promise<void>
   logout: () => Promise<void>
@@ -37,6 +38,11 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 interface AuthResponse {
   user: UserDto
+}
+
+interface ChallengeResponse {
+  twoFactorRequired: true
+  challengeToken: string
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -84,9 +90,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [loadPreferences, queryClient])
 
+  /** Returns a challenge token when the account has two-factor enabled. */
   const login = useCallback(
-    async (email: string, password: string) => {
-      const result = await api.post<AuthResponse>('/auth/login', { email, password })
+    async (email: string, password: string): Promise<string | null> => {
+      const result = await api.post<AuthResponse | ChallengeResponse>('/auth/login', {
+        email,
+        password,
+      })
+      if ('twoFactorRequired' in result) return result.challengeToken
+      queryClient.clear()
+      setUser(result.user)
+      await loadPreferences()
+      return null
+    },
+    [loadPreferences, queryClient],
+  )
+
+  const loginTotp = useCallback(
+    async (challengeToken: string, code: string) => {
+      const result = await api.post<AuthResponse>('/auth/login/totp', { challengeToken, code })
       queryClient.clear()
       setUser(result.user)
       await loadPreferences()
@@ -173,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       preferences,
       loading,
       login,
+      loginTotp,
       register,
       demoLogin,
       logout,
@@ -187,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       preferences,
       loading,
       login,
+      loginTotp,
       register,
       demoLogin,
       logout,

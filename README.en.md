@@ -12,7 +12,7 @@ OpenSimpleMail lets you manage multiple IMAP/SMTP accounts in one place: a unifi
 
 - First-run setup wizard: create the administrator and choose the initial site name, registration and demo policy
 - Administrator role with a public-registration switch; disabling it hides the sign-up UI and rejects the API server-side
-- Account security: change the password (other sessions are revoked), and manage sessions with browser, IP and sign-in time
+- Account security: change the password (other sessions are revoked), manage sessions with browser, IP and sign-in time, enable two-factor authentication (TOTP plus one-time recovery codes) and review the sign-in audit trail
 - Per-user preferences stored server-side: refresh interval, page size, default view, list density, auto-mark-read and remote-image policy
 - Multiple IMAP/SMTP accounts with per-account folders and unread counts
 - Folder management from the sidebar: create, rename and delete custom folders, or empty the trash; special folders are not deletable
@@ -83,12 +83,14 @@ Everything lives in the host's `./data` directory, bind-mounted at `/app/data`: 
 - The container starts as root, takes ownership of `./data` for the image's `node` user (uid 1000) and immediately drops privileges, so the mount works whatever user owns the host directory. Only override `user:` in compose if you chown it yourself.
 - Attachments need no separate mount: uploads and extracted attachments live in `./data/attachments`, are removed once they are no longer needed, and administrators can inspect and clear them from Settings → Attachment cache.
 - Local development and Docker share `./data`; do not run both at the same time.
+- To keep attachments on another disk, add a second mount for them; `ATTACHMENT_DIR` stays as it is, e.g. `- /srv/mail-attachments:/app/data/attachments`.
 
 Migrating from the old named volume:
 
 ```bash
 docker compose down
 VOLUME=$(docker volume ls --format '{{.Name}}' | grep open-simple-mail-data | head -1)
+test -n "$VOLUME" || { echo "no old volume found, nothing to migrate"; exit 0; }
 mkdir -p data
 docker run --rm -v "$VOLUME":/from -v "$PWD/data":/to alpine cp -a /from/. /to/
 ```

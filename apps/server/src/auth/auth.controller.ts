@@ -12,13 +12,29 @@ import {
   Res,
 } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
-import type { AppConfigDto, LoginEventDto, SessionDto, UserDto } from '@osm/shared'
+import type {
+  AppConfigDto,
+  LoginEventDto,
+  SessionDto,
+  TotpEnabledDto,
+  TotpSetupDto,
+  TwoFactorChallengeDto,
+  UserDto,
+} from '@osm/shared'
 import type { Request, Response } from 'express'
 import { APP_CONFIG, type AppConfig } from '../config/app.config'
 import { SettingsService } from '../settings/settings.service'
 import { SetupAllowed } from '../setup/setup.decorators'
 import { CurrentUser, Public } from './auth.decorators'
-import { ChangePasswordDto, LoginDto, RecoverAdminDto, RegisterDto } from './auth.dto'
+import {
+  ChangePasswordDto,
+  DisableTotpDto,
+  LoginDto,
+  RecoverAdminDto,
+  RegisterDto,
+  TotpCodeDto,
+  TwoFactorLoginDto,
+} from './auth.dto'
 import { AuthService, SESSION_COOKIE } from './auth.service'
 import { attachSessionCookie, sessionCookieOptions } from './session-cookie'
 
@@ -49,6 +65,29 @@ export class AuthController {
     @Req() req: Request,
   ): Promise<void> {
     await this.auth.changePassword(userId, req.cookies?.[SESSION_COOKIE] as string | undefined, dto)
+  }
+
+  @Post('totp/setup')
+  @HttpCode(200)
+  async startTotpSetup(@CurrentUser('id') userId: string): Promise<TotpSetupDto> {
+    return this.auth.startTotpSetup(userId)
+  }
+
+  @Post('totp/enable')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  async enableTotp(
+    @CurrentUser('id') userId: string,
+    @Body() dto: TotpCodeDto,
+  ): Promise<TotpEnabledDto> {
+    return this.auth.enableTotp(userId, dto.code)
+  }
+
+  @Post('totp/disable')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(204)
+  async disableTotp(@CurrentUser('id') userId: string, @Body() dto: DisableTotpDto): Promise<void> {
+    await this.auth.disableTotp(userId, dto.password)
   }
 
   @Get('sessions')
@@ -112,15 +151,35 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @HttpCode(200)
   @Post('login')
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse | TwoFactorChallengeDto> {
+    const result = await this.auth.login(dto, req.get('user-agent'), clientIp(req))
+    if ('twoFactorRequired' in result) return result
+    attachSessionCookie(res, result, this.config)
+    return { user: result.user }
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('login/totp')
+  async loginTotp(
+    @Body() dto: TwoFactorLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
-    const session = await this.auth.login(dto, req.get('user-agent'), clientIp(req))
+    const session = await this.auth.completeTwoFactor(
+      dto.challengeToken,
+      dto.code,
+      req.get('user-agent'),
+      clientIp(req),
+    )
     attachSessionCookie(res, session, this.config)
     return { user: session.user }
   }
